@@ -21,7 +21,7 @@ def peaks_multithreshold(img, peak_threshold):
 
 
 if __name__ == '__main__':
-    img_fname = '/Users/jaclynbeck/Desktop/BaramLab/C2-8-29-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_.i...CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_GREEN_t1.tif'
+    img_fname = '/Users/jaclynbeck/Desktop/BaramLab/Substack (1).tif' #C2-8-29-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_.i...CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_GREEN_t1.tif'
     peak_threshold = 100; 
     
     img = sp.misc.imread(img_fname)

@@ -65,13 +65,10 @@ def otsu_multithreshold(img, num_thresholds, opt_type='local'):
         xopt = xopt.x
         
     else:
-        #xopt = opt.minimize(sigma_b, x0=k0, args=(p_i,L), method='Powell')
         xopt = opt.fmin_powell(sigma_b, x0=k0, args=(p_i,L), xtol=1.0)
     
     elapsed = timeit.default_timer() - start_time
     print(elapsed)
-    #xopt2 = opt.brute(sigma_b, rranges, args=(p_i,L))
-    #print(xopt2)
     
     if xopt.size > 1:
         xopt = sp.sort(xopt)
@@ -80,7 +77,7 @@ def otsu_multithreshold(img, num_thresholds, opt_type='local'):
 
 if __name__ == '__main__':
     img_fname = '/Users/jaclynbeck/Desktop/BaramLab/Substack (1).tif'
-    num_thresholds = 4; 
+    num_thresholds = 12; 
     
     img = sp.misc.imread(img_fname)
     [maxSig, thresholds] = otsu_multithreshold(img, num_thresholds, 'local')
@@ -98,10 +95,10 @@ if __name__ == '__main__':
     values = sp.round_(sp.linspace(0, L-1, num_thresholds+1))
     bw = sp.zeros_like(img, dtype='uint8')
         
-    for i in range(k.size-1):
-        bw[(img < k[i+1]) & (img >= k[i])] = values[i];
+    for i in sp.arange(1,k.size-1):
+        bw[(img < k[i+1]) & (img >= k[i])] = 10+values[i];
 
-    plt.imshow(bw)
+    plt.imshow(bw/bw.max())
     plt.show()
     
-    sp.misc.imsave('/Users/jaclynbeck/Desktop/BaramLab/pyGliaMask.tif', bw)
+    sp.misc.imsave('/Users/jaclynbeck/Desktop/BaramLab/pyGliaMask.tif', bw*255/bw.max())

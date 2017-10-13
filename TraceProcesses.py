@@ -15,220 +15,188 @@ Created on Mon Oct  2 13:12:56 2017
 """
 
 import scipy as sp
-import skimage.measure as skm
 from libtiff import TIFFfile
 import matplotlib.pyplot as plt
 import PeaksMultithreshold as pm
 import FindSomas as fs
 import timeit
+import OtsuMultithreshold as omt
+import GliaMask as gm
+from mst_clustering import MSTClustering # installed with 'pip install mst_clustering'
+import ThresholdLevel as tl
+import Utils
+import cv2
 
 
-class Level:
+"""
+This class represents a microglia in a single frame
+"""
+class Microglia:
+    def __init__(self, soma):
+        self.soma = soma
+        self.centroid = soma.centroid
+        self.bbox = soma.bbox
+        self.seedPoints = []
+        self.regions = []
+        self.regionCount = 0
+        
+    def addSeedPoints(self, coords):
+        self.seedPoints.append(coords)
+        
+    def getBBox(self):
+        return self.bbox
     
-    MIN_SOMA_SIZE = 20*20 # 10x10 region
-    
-    def __init__(self, k, threshold, indices):
-        self.k = k
-        self.threshold = round(threshold)
-        self.labelledRegions = []
-        self.somaLevel = False
-        self.backgroundLevel = False
-        self.dimensions = len(indices)
+    def addRegion(self, coords):
+        self.regions.append(coords)
+        self.regionCount += 1
         
-        if self.dimensions == 2:
-            rows = sp.reshape(indices[0], (indices[0].size, 1))
-            cols = sp.reshape(indices[1], (indices[1].size, 1))
-            self.coordinates = sp.concatenate((rows, cols), axis=1);
-        else:
-            z = sp.reshape(indices[0], (indices[0].size,1))
-            rows = sp.reshape(indices[1], (indices[1].size, 1))
-            cols = sp.reshape(indices[2], (indices[2].size, 1))
-            self.coordinates = sp.concatenate((z,rows, cols), axis=1);
-            
-        self.count = rows.size
-        
-    def z(self):
-        if self.dimensions == 2:
-            return 0
-        
-        return self.coordinates[:,0]
-    
-    def rows(self):
-        if self.dimensions == 2:
-            return self.coordinates[:,0]
-        
-        return self.coordinates[:,1]
-    
-    def cols(self):
-        if self.dimensions == 2:
-            return self.coordinates[:,1]
-        
-        return self.coordinates[:,2]
-        
-    def addLabelledRegion(self, coords):            
-        self.labelledRegions.append(coords)
-        
-    def regionCount(self):
-        return len(self.labelledRegions)
-   
-    def regionZ(self, region):
-        if self.dimensions == 2:
-            return 0
-        
-        return self.labelledRegions[region][:,0]
-    
     def regionRows(self, region):
-        if self.dimensions == 2:
-            return self.labelledRegions[region][:,0]
-        
-        return self.labelledRegions[region][:,1]
+        return self.regions[region][0]
     
     def regionCols(self, region):
-        if self.dimensions == 2:
-            return self.labelledRegions[region][:,1]
-        
-        return self.labelledRegions[region][:,2]
+        return self.regions[region][1]
     
-    def setSomaLevel(self):
-        self.somaLevel = True
-        
-    def isSomaLevel(self):
-        return self.somaLevel
+    def overlaps(self, bbox):
+        return Utils.bbox_significant_overlap(self.bbox, bbox, 0.9)
     
-    def setBackgroundLevel(self):
-        self.backgroundLevel = True
+
+class SeedRegion:
+    def __init__(self, bbox):
+        self.bbox   = bbox
+        self.somas  = []
+        self.levels = []
+        self.levelCount = 0
+        self.seedPoints = []
         
-    def isBackgroundLevel(self):
-        return self.backgroundLevel
+    def addSoma(self, soma):
+        self.somas.append(soma)
         
+    def hasSoma(self, soma):
+        return (soma in self.somas)
     
-    """
-    'Less than' function for sorting by k-index
-    """
-    def __lt__(self, other):
-         return self.k < other.k
+    def hasSomas(self):
+        return len(self.somas) > 0
+    
+    def addLevel(self, regionObject):
+        self.levels.append(regionObject)
+        self.levelCount += 1
         
+    def addSeedPoints(self, pts):
+        self.seedPoints.append(pts)
         
-    """
-    This is what will get printed out when using print(level) or during 
-    debugging. 'thresh: count <soma/background if applicable>'
-    """
-    def __repr__(self):
-        s = "k:\t\t" + str(self.k)
-        if self.somaLevel:
-            s += " (Soma)"
-        elif self.backgroundLevel:
-            s += " (Background)"
+    def rows(self):
+        return self.levels[0].rows()
+    
+    def cols(self):
+        return self.levels[0].cols()
+    
+    def levelRows(self, level):
+        return self.levels[self.levelCount-level-1].rows()
+    
+    def levelCols(self, level):
+        return self.levels[self.levelCount-level-1].cols()
+        
+    def overlaps(self, bbox):
+        return Utils.bbox_significant_overlap(self.bbox, bbox, 0.9)
+    
+    
+
+def sample_seed_points(img, edge_points, bbox, block_size):
+    height = bbox[2]-bbox[0]+1
+    width  = bbox[3]-bbox[1]+1
+    
+    bw = sp.zeros((height,width))
+    bw[edge_points[:,0]-bbox[0],edge_points[:,1]-bbox[1]] = \
+                                        img[edge_points[:,0],edge_points[:,1]]
+    
+    points = []
+    
+    for row in sp.arange(0, height, block_size):
+        for col in sp.arange(0, width, block_size):
+            block = bw[row:row+block_size,col:col+block_size]
+            if sp.any(block > 0):
+                (x,y) = sp.where(block > 0)
+                smallest = sp.argmin(bw[row+x,col+y])
+                
+                point_r = row + x[smallest] + bbox[0]
+                point_c = col + y[smallest] + bbox[1]
+
+                points.append(sp.array([point_r,point_c]))
+                
+    return sp.array(points)
+
+
+def get_contour(coordinates, bbox):    
+    height = bbox[2]-bbox[0]+1
+    width  = bbox[3]-bbox[1]+1
+    
+    bw = sp.zeros((height, width))
+    bw[coordinates[0]-bbox[0],coordinates[1]-bbox[1]] = 255
+
+    contours = cv2.findContours(bw.astype(sp.uint8).copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    contours = contours[1]
+
+    contours = [sp.reshape(c,(c.shape[0]*c.shape[1], c.shape[2])) for c in contours]
+    contours = sp.concatenate(contours)
+    contours = sp.array(list(set(tuple(p) for p in contours))) # Remove duplicate points
+    
+    # contours are in terms of x,y instead of row,col, so they need to 
+    # be reversed. We also need to add the row/col start index to account
+    # for using only the bounding box
+    rc = sp.column_stack((contours[:,1]+bbox[0],contours[:,0]+bbox[1]))
+    
+    return rc
+
+
+def get_all_seed_points(img, seedRegions):    
+    for seed in seedRegions:
+        for level in range(seed.levelCount):
+            block_size = level+2
             
-        s += "\n"
-        s += "Threshold:\t" + str(int(self.threshold)) + "\n" + \
-             "Pixels:\t\t" + str(self.count) + "\n" + \
-             "Regions:\t" + str(self.regionCount()) + "\n\n"
+            edge_pts = get_contour([seed.levelRows(level),seed.levelCols(level)], seed.bbox)
             
-        return s
-    
-
-def join_one_level(bw, level):
-    if level.dimensions == 2:
-        bw[level.rows(), level.cols()] = 255
-    else:
-        bw[level.z(), level.rows(), level.cols()] = 255
-    
-    labels = skm.label(bw, background=False, connectivity=1)
-    props = skm.regionprops(labels)
-    counts, edges = sp.histogram(labels, labels.max()+1)
-    
-    valid = sp.where(counts > level.MIN_SOMA_SIZE)
-    
-    # Record the valid labelled regions in the level object.
-    # Black out any valid regions while leaving invalid regions in the pixel
-    # map for the next level. 
-    for v in valid[0]:
-        if v == 0:
-            continue
+            seed_pts = sample_seed_points(img, edge_pts, seed.bbox, block_size)
+            
+            seed.addSeedPoints(seed_pts.astype('int32'))
         
-        level.addLabelledRegion(props[v-1].coords)
+    return seedRegions
+
+
+def combine_regions(levels, somas):
+    # The lowest level will have the largest regions. Start by adding somas
+    lowestL = levels[-1]
+    seedRegions = []
+    
+    for region in range(lowestL.regionCount):
+        r_bbox = lowestL.getRegionBBox(region)
         
-        #bw[props[v-1].coords[:,0], props[v-1].coords[:,1]] = 0
+        seedRegion = SeedRegion(r_bbox)
+
+        # More than one soma can fit inside a region
+        for soma in somas:
+            if seedRegion.overlaps(soma.bbox):
+                seedRegion.addSoma(soma)
+                
+        if seedRegion.hasSomas():
+            seedRegion.addLevel(lowestL.regionObject(region))
+            seedRegions.append(seedRegion)
         
-        # for debugging/display
-        #labels[labels == v] = 255
+                
+    # Go from second-lowest level to the top level
+    for L in levels[-2::-1]:
+        for region in range(L.regionCount):
+            r_bbox = L.getRegionBBox(region)
+            
+            # If it matches a current known seed region, add it and go to 
+            # the next level region
+            for seed in seedRegions:
+                if seed.overlaps(r_bbox):
+                    seed.addLevel(L.regionObject(region))
+                    break # There can only be one region this one overlaps by design
+      
         
-    #plt.imshow(bw)
-    #plt.show()
+    return seedRegions
     
-    #plt.imshow(labels[0]*255/(labels[0].max()+1)) # Avoid divide by zero
-    #plt.show()
-    
-    return valid[0].size-1
-
-
-def join_objects(img, levels):
-    bw = sp.zeros_like(img, dtype='uint8')
-    
-    index = 0
-    objects_added = sp.zeros((len(levels),))
-    
-    for L in levels:
-        objects_added[index] = join_one_level(bw, L)
-        index += 1
-
-    return sum(objects_added)
-
-        
-
-def get_levels(images, thresholds, slice_of_interest):
-    if len(images.shape) == 3:
-        [z, width, height] = images.shape
-    else:
-        [width, height] = images.shape
-        z = 1
-    
-    if thresholds.size == 1:
-        thresholds = sp.array(thresholds, ndmin=1)
-    
-    thresholds = sp.concatenate(([-1], thresholds, [images.max()+1]))
-    
-    levels = []
-    for k in range(thresholds.size-1):
-        indices = sp.where((images <= thresholds[k+1]) & (images > thresholds[k]))
-        levels.append(Level(k+1, thresholds[k+1], indices))
-    
-    levels.sort(reverse=True) # Start at highest threshold and go to lowest
-    
-    total_objects = join_objects(images, levels)
-    
-    for i in sp.arange(1,len(levels)-1):
-        if (levels[i].regionCount() < levels[i-1].regionCount()) and \
-            (levels[i].regionCount() >= levels[i+1].regionCount()):
-                levels[i].setBackgroundLevel()
-
-    levels[-1].setBackgroundLevel()
-    print(levels)     
-    
-    # debuging
-    bw = sp.zeros((z, width, height), dtype='uint8')
-    #color = 0;
-    
-    for i in range(len(levels)):
-        L = levels[len(levels)-i-1]
-        
-        if L.isBackgroundLevel():
-            color = 0
-        else:
-            color = 20+i*5
-        
-        for r in range(L.regionCount()):
-            bw[L.regionZ(r), L.regionRows(r), L.regionCols(r)] = color
-    
-    bw = bw * (255/bw.max())    
-    plt.imshow(bw[slice_of_interest,:,:])
-    plt.show()
-    
-    sp.misc.imsave('/Users/jaclynbeck/Desktop/BaramLab/objects_' + str(thresholds.size-2) + '.tif', bw[slice_of_interest,:,:])
-    
-    
-
 
 if __name__ == '__main__':
     img_fname = '/Users/jaclynbeck/Desktop/BaramLab/Substack (1).tif' #'/Users/jaclynbeck/Desktop/BaramLab/C2-8-29-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_.i...CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_GREEN_t1.tif'
@@ -239,11 +207,10 @@ if __name__ == '__main__':
     
     if is_stack == False:
         slice_of_interest = 0
-        
-    #[threshold, somas] = fs.find_somas(img_fname, output_img)
     
     tiff = TIFFfile(img_fname)
     samples, sample_names = tiff.get_samples()
+    tiff.close()
     
     if is_stack:
         images = samples[0]
@@ -252,13 +219,43 @@ if __name__ == '__main__':
 
     start_time = timeit.default_timer()
     
-    thresholds = pm.peaks_multithreshold(images, peak_threshold)
-    print(thresholds)
-
+    mask = gm.create_Mask(images)
     
-    get_levels(images, thresholds, slice_of_interest)
+    images[mask == 0] = 0
+    
+    image_stack = sp.reshape(images, (1,images.shape[0], images.shape[1]))
+    [soma_threshold, somas] = fs.find_somas(image_stack)
+    
+    #thresholds = pm.peaks_multithreshold(images, peak_threshold)
+    #print(thresholds)
+    [maxSig, thresholds] = omt.otsu_multithreshold(images, 20)
+    print(thresholds)
+    
+    thresholds = thresholds[thresholds < soma_threshold] 
+    
+    thresholds = sp.concatenate((thresholds, [soma_threshold]))
+    
+    levels = tl.get_levels(images, thresholds, somas)
+    
+    seedRegions = combine_regions(levels, somas)
+    Utils.plot_seed_regions(seedRegions, True)
+    
+    seedRegions = get_all_seed_points(images, seedRegions)
         
     elapsed = timeit.default_timer() - start_time
     print(elapsed)
     
+    
+    # For debugging and display
+    print(levels)
+    
+    bw = Utils.plot_levels(levels, 1024, 1024, True)    
+    sp.misc.imsave('/Users/jaclynbeck/Desktop/BaramLab/objects_' + str(thresholds.size-1) + '.tif', bw*255.0/bw.max())
+    
+    
+    s_img = Utils.plot_somas(somas, True)
+    sp.misc.imsave(output_img, s_img)
+    
+    cont_img = Utils.plot_seed_points(points, True)
+    sp.misc.imsave('/Users/jaclynbeck/Desktop/BaramLab/contours.tif',cont_img)
     
