@@ -16,7 +16,11 @@ import Utils
 """
 This class represents a soma in a single frame
 """
-class FrameSoma:
+class FrameSoma(object):
+    # Defining all the variables ahead of time with __slots__ helps with
+    # memory management and makes access quicker
+    __slots__ = 'frameNum', 'coordinates', 'bbox', 'centroid'
+    
     """
     Global variables for this class
     """
@@ -70,7 +74,11 @@ class FrameSoma:
 """
 This class represents a soma as a 3D object across multiple frames  
 """
-class Soma3D:
+class Soma3D(object):
+    # Defining all the variables ahead of time with __slots__ helps with
+    # memory management and makes access quicker
+    __slots__ = 'id', 'frames', 'frameNums', 'coordinates'
+    
     def __init__(self, idNum, frame):    
         self.id = idNum
         self.frames = [frame]
@@ -209,7 +217,8 @@ def find_somas_single_image(img):
     bw = sp.zeros_like(img, dtype='uint8')
     bw[img > threshold] = 255
 
-    return [threshold, label_objects(bw, 0)]
+    somas = label_objects(bw, 0)
+    return [threshold, somas]
     
 
 """

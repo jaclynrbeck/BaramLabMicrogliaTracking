@@ -50,8 +50,8 @@ def bbox_significant_overlap(bbox1, bbox2, overlap_percent):
     
 
     
-def plot_levels(levels, width, height, display=False):
-    bw = sp.zeros((width, height), dtype='uint16')
+def plot_levels(levels, img_size, display=False):
+    bw = sp.zeros(img_size, dtype='uint16')
     
     for i in range(len(levels)):
         L = levels[len(levels)-i-1]
@@ -62,8 +62,8 @@ def plot_levels(levels, width, height, display=False):
             color = L.threshold+1
         
         #bw[L.rows(),L.cols()] = color
-        for r in range(L.regionCount):
-            bw[L.regionRows(r), L.regionCols(r)] = color 
+        for region in L.regions:
+            bw[region.rows(), region.cols()] = color 
     
     if display:
         plt.imshow(bw*255.0/bw.max())
@@ -72,8 +72,8 @@ def plot_levels(levels, width, height, display=False):
     return bw
 
 
-def plot_somas(somas, display=False):
-    s_img = sp.zeros((1024,1024), dtype='uint8')
+def plot_somas(somas, img_size, display=False):
+    s_img = sp.zeros(img_size, dtype='uint8')
     color = 0
     for soma in somas:
         s_img[soma.rows(), soma.cols()] = 20 + 5*color
@@ -88,15 +88,13 @@ def plot_somas(somas, display=False):
     return s_img
 
 
-def plot_seed_regions(seedRegions, display=False):
-    s_img = sp.zeros((1024,1024), dtype='uint8')
-    color = 0
+def plot_seed_regions(seedRegions, img_size, display=False):
+    s_img = sp.zeros(img_size, dtype='uint8')
+    
     for seed in seedRegions:
-        s_img[seed.rows(), seed.cols()] = 20 + 5*color
+        s_img[seed.rows(), seed.cols()] = 128
         for soma in seed.somas:
             s_img[soma.rows(),soma.cols()] = 255
-            
-        color += 1
         
     s_img = sp.array(s_img * (255.0 / s_img.max()), dtype='uint8')
     
@@ -108,11 +106,12 @@ def plot_seed_regions(seedRegions, display=False):
     
 
 
-def plot_seed_points(points, display=False):
-    bw = sp.zeros((1024,1024), dtype='uint8')
+def plot_seed_points(seedRegions, img_size, display=False):
+    bw = sp.zeros(img_size, dtype='uint8')
     
-    for pts in points:
-        bw[pts[:,0],pts[:,1]] = 255
+    for seed in seedRegions:
+        for pts in seed.seedPoints:
+            bw[pts[:,0],pts[:,1]] = 255
     
     if display:
         plt.imshow(bw)

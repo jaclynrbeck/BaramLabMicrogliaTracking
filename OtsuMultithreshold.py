@@ -36,7 +36,7 @@ def sigma_b(ks, p_i, L):
     return -sigma_b # Minimize the negative of this function
     
     
-def otsu_multithreshold(img, num_thresholds, opt_type='local'):
+def otsu_multithreshold(img, num_thresholds, max_val=0, opt_type='local'):
     L = img.max() + 1
     
     if L == 256:
@@ -46,14 +46,18 @@ def otsu_multithreshold(img, num_thresholds, opt_type='local'):
     counts, binEdges = sp.histogram(img, L)
     p_i = counts / sum(counts)
     
-    midpoint = skf.threshold_otsu(img, L)
+    if max_val == 0:
+        midpoint = skf.threshold_otsu(img, L)
     
-    k_half1 = sp.linspace(0,int(midpoint),int(num_thresholds/2)+2)[1:]
-    k_half2 = sp.linspace(int(midpoint)+1,L,int(num_thresholds/2)+2)[1:]
+        k_half1 = sp.linspace(0,int(midpoint),int(num_thresholds/2)+2)[1:]
+        k_half2 = sp.linspace(int(midpoint)+1,L,int(num_thresholds/2)+2)[1:]
+        
+        k0 = sp.concatenate((k_half1,k_half2))
+        k0 = k0[0:num_thresholds]
     
-    #k0 = sp.linspace(0, L, num_thresholds+2)
-    k0 = sp.concatenate((k_half1,k_half2))
-    k0 = k0[0:num_thresholds]
+    else:
+        k0 = sp.linspace(0, max_val, num_thresholds+2)
+        k0 = k0[1:num_thresholds+1]
     
     start_time = timeit.default_timer()
     
@@ -80,7 +84,7 @@ if __name__ == '__main__':
     num_thresholds = 12; 
     
     img = sp.misc.imread(img_fname)
-    [maxSig, thresholds] = otsu_multithreshold(img, num_thresholds, 'local')
+    [maxSig, thresholds] = otsu_multithreshold(img, num_thresholds, 0, 'local')
     print(maxSig)
     print(thresholds)
     
