@@ -24,7 +24,7 @@ class FrameSoma(object):
     """
     Global variables for this class
     """
-    MIN_SOMA_RADIUS = 10.0# Somas must have at least this radius to be valid
+    MIN_SOMA_RADIUS = 10.0 # Somas must have at least this radius to be valid
     MIN_SOMA_SIZE = MIN_SOMA_RADIUS*MIN_SOMA_RADIUS # Somas must have at least
                                                     # this many pixels to be
                                                     # valid
@@ -198,9 +198,9 @@ def label_objects(bw, frame):
 """
 Finds all the somas in a single max projection image. 
 
-The image is thresholded using Otsu's method, and all pixels above the 
-threshold are likely to be somas. Interconnected pixels are labelled as 
-objects, and those of adequate size are returned as valid somas. 
+The image is thresholded by finding the top 1% of pixels and using those
+pixels as potential somas. Interconnected pixels are labelled as objects, and 
+those of adequate size are returned as valid somas. 
 
 Input:
     img - (MxN ndarray) The image to search
@@ -212,7 +212,8 @@ Output:
         somas - (list) List of FrameSoma objects 
 """
 def find_somas_single_image(img):
-    threshold = skf.threshold_otsu(img[img > 0], img.max()+1)
+    #threshold = skf.threshold_otsu(img[img > 0], img.max()+1)
+    threshold = sp.percentile(img, 99)
     
     bw = sp.zeros_like(img, dtype='uint8')
     bw[img > threshold] = 255

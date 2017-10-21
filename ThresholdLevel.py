@@ -50,6 +50,13 @@ class RegionObject(object):
         return self.coordinates[:,1]
     
     """
+    Shortcut for calculating the centroid of the region 
+    Outputs 1x2 array of coordinates
+    """
+    def centroid(self):
+        return sp.round_(sp.reshape(sp.mean(self.coordinates, axis=0), (1,2)))
+    
+    """
     'Less than' function for sorting by priority
     """
     def __lt__(self, other):
@@ -78,7 +85,6 @@ class LevelObject(object):
     Global variables for this object
     """
     MIN_OBJ_SIZE = 10*10 # Objects must be this large to be added as a region
-    MAX_OBJ_SIZE = 1024*1024*0.1 # A microglia should not fill > 10% of the image
     
     """
     Initialization
@@ -139,11 +145,11 @@ class LevelObject(object):
 # TODO do I need this function anymore?
 def prune_background(levels):
     for i in sp.arange(1,len(levels)-1):
-        if (levels[i].regionCount() < levels[i-1].regionCount()) and \
-            (levels[i].regionCount() >= levels[i+1].regionCount()):
+        if (levels[i].regionCount <= levels[i-1].regionCount) and \
+            (levels[i].regionCount >= levels[i+1].regionCount):
                 levels[i].setBackgroundLevel()
                 
-    if levels[-1].regionCount() < levels[-2].regionCount():
+    if levels[-1].regionCount <= levels[-2].regionCount:
         levels[-1].setBackgroundLevel()
         
 
@@ -176,8 +182,8 @@ def find_objects_one_level(img, threshold, priority):
     labels = skm.label(bw, background=False, connectivity=1)
     counts, edges = sp.histogram(labels, labels.max()+1)
     
-    valid = sp.where((counts > LevelObject.MIN_OBJ_SIZE) \
-                     & (counts < LevelObject.MAX_OBJ_SIZE))
+    valid = sp.where((counts > LevelObject.MIN_OBJ_SIZE)) #\
+                     #& (counts < LevelObject.MAX_OBJ_SIZE))
     
     # If only the background was labelled, stop here
     if len(valid[0]) == 0:

@@ -8,273 +8,162 @@ Created on Thu Oct  5 20:54:49 2017
 
 import scipy as sp
 from libtiff import TIFFfile
-import PeaksMultithreshold as pm
 import FindSomas as fs
 import timeit
-import OtsuMultithreshold as omt
-import GliaMask as gm
-from mst_clustering import MSTClustering # installed with 'pip install mst_clustering'
-import ThresholdLevel as tl
 import Utils
-import cv2 # installed with 'conda install -c conda-forge opencv'
+import skimage.measure as skmeas
+import skimage.morphology as skmorph
+import matplotlib.pyplot as plt
+
 
 """
-This object represents a self-contained region of objects that overlap at each
-threshold. It will contain one or more somas and the list of RegionObjects
-that overlap this area. 
-""" 
-class SeedRegion(object):
+This object represents a region of connected pixels in an image
+"""
+class RegionObject(object):
     # Defining all the variables ahead of time with __slots__ helps with
     # memory management and makes access quicker
-    __slots__ = 'bbox', 'somas', 'regions', 'regionCount', 'seedPoints'
+    __slots__ = 'coordinates', 'skeleton', 'count', 'bbox'
+    
+    """
+    Global variables for this object
+    """
+    MIN_OBJ_SIZE = 10*10 # Objects must be this large to be added as a region
     
     """
     Initialization
-        bbox - (1x4 ndarray or list) Bounding box with [xmin, ymin, xmax, ymax]
+        threshold - (int) The threshold at which this region was found
+        priority - (int) How high the threshold is. 0 = highest. This will 
+                         correspond to block size in the seed point sampling.
+        coordinates - (Nx2 ndarray) The pixel coordinates of this region
     """
-    def __init__(self, bbox):
-        self.bbox   = bbox
-        self.somas  = []
-        self.regions = []
-        self.regionCount = 0
-        self.seedPoints = []
+    def __init__(self, coordinates):
+        self.coordinates = coordinates
+        self.count = self.coordinates.shape[0]
+        
+        rows = self.rows()
+        cols = self.cols()
+        self.bbox = [rows.min(),cols.min(),rows.max(),cols.max()]
+        
+        self.skeleton = self.skeletonize()
     
     """
-    Adds a FrameSoma object to the list of somas
-    """    
-    def addSoma(self, soma):
-        self.somas.append(soma)
+    Shortcut for accessing the image row coordinates
+    Outputs Nx1 array of row coordinates
+    """  
+    def rows(self): 
+        return self.coordinates[:,0]
     
     """
-    Returns true if this region has been assigned at least one soma
+    Shortcut for accessing the image column coordinates 
+    Outputs Nx1 array of column coordinates
     """
-    def hasSomas(self):
-        return len(self.somas) > 0
-    
-    """
-    Adds a RegionObject that was identified as belonging to this seed region
-    """
-    def addRegion(self, regionObject):
-        self.regions.append(regionObject)
-        self.regionCount += 1
-    
-    """
-    Adds a set of seed points that have been sampled from this region
-    """    
-    def addSeedPoints(self, pts):
-        self.seedPoints.append(pts)
-    
-    """
-    Shortcut for getting the row coordinates of the largest RegionObject in 
-    the list, which will always be last due to sorting. 
-    """    
-    def rows(self):
-        return self.regions[-1].rows()
-    
-    """
-    Shortcut for getting the column coordinates of the largest RegionObject in 
-    the list, which will always be last due to sorting. 
-    """ 
     def cols(self):
-        return self.regions[-1].cols()
+        return self.coordinates[:,1]
     
     """
-    Returns true if this region's bounding box and the input bounding box
-    overlap by at least 90%, indicating that they are the same region.
-    """    
-    def overlaps(self, bbox):
-        return Utils.bbox_significant_overlap(self.bbox, bbox, 0.9)
+    Shortcut for calculating the centroid of the region 
+    Outputs 1x2 array of coordinates
+    """
+    def centroid(self):
+        return sp.round_(sp.reshape(sp.mean(self.coordinates, axis=0), (1,2)))
     
     """
-    This is what gets printed out with print(SeedRegion)
+    Shortcut for accessing the skeleton row coordinates
+    Outputs Nx1 array of row coordinates
+    """
+    def skeletonRows(self):
+        return self.skeleton[:,0]
+    
+    """
+    Shortcut for accessing the skeleton column coordinates 
+    Outputs Nx1 array of column coordinates
+    """
+    def skeletonCols(self):
+        return self.skeleton[:,1]
+    
+    """
+    Skeletonizes this region so the midline of each process becomes a line.
+    """
+    def skeletonize(self):
+        size = [self.bbox[2]-self.bbox[0]+1, self.bbox[3]-self.bbox[1]+1]
+        bw = sp.zeros(size, dtype='uint8')
+        
+        bw[self.rows()-self.bbox[0], self.cols()-self.bbox[1]] = 1
+        skeleton = skmorph.skeletonize(bw)
+        
+        rows, cols = sp.where(skeleton > 0)
+        return sp.vstack((rows+self.bbox[0], cols+self.bbox[1])).T
+    
+    
+    """
+    This is what will get printed out when using print(region)
     """
     def __repr__(self):
-        s = "{Somas: " + str(len(somas)) + ", Regions: " + \
-            str(self.regionCount) + "}"
+        s = "{Centroid: " + str(self.centroid()) + ", Count: " + \
+            str(self.count) + "}"
         return s
-            
     
+
+def find_cell_regions(img, somas):     
+    # Threshold the image
+    bw = sp.zeros_like(img, dtype='uint8')
+    bw[img > 0] = 255
     
-"""
-Given a contour and a block size, sample seed points around the contour. 
-The image is divided into (block_size)x(block_size) windows. In each window, 
-if at least one contour point is there, the point with the smallest pixel
-intensity is used as the sample. 
-
-Input:
-    img - (MxN ndarray) The original image with pixel intensities
-    edge_points - (Kx2 ndarray) Array of contour pixel coordinates
-    bbox - (1x4 ndarray or list) Bounding box with [xmin, ymin, xmax, ymax]
-    block_size - (int) The width of the block to sample from
+    # Remove the somas so that only processes are found
+    for soma in somas:
+        bw[soma.rows(), soma.cols()] = 0
     
-Output:
-    points - (Jx2 ndarray) Array of sampled points from the contour
-"""
-def sample_seed_points(img, edge_points, bbox, block_size):
-    # Dimensions of the bounding box
-    height = bbox[2]-bbox[0]+1
-    width  = bbox[3]-bbox[1]+1
+    # Find objects that are large enough
+    labels = skmeas.label(bw, background=False, connectivity=1)
+    counts, edges = sp.histogram(labels, labels.max()+1)
     
-    # Make an image that is the same size as the bounding box. Adjust
-    # coordinates so that (0,0) is the upper left corner of the bounding box.
-    # Add real pixel intensities to the new image
-    bw = sp.zeros((height,width))
-    bw[edge_points[:,0]-bbox[0],edge_points[:,1]-bbox[1]] = \
-                                        img[edge_points[:,0],edge_points[:,1]]
+    valid = sp.where((counts > RegionObject.MIN_OBJ_SIZE))
     
-    points = []
+    # If only the background was labelled, stop here
+    if len(valid[0]) == 0:
+        return None
+
+    props = skmeas.regionprops(labels)
     
-    # The two for loops create a (block_size)x(block_size) sampling window
-    for row in sp.arange(0, height, block_size):
-        for col in sp.arange(0, width, block_size):
-            # The block coordinates
-            block = bw[row:row+block_size,col:col+block_size]
-            
-            # If theres a contour point in the block, choose the lowest 
-            # intensity point as the sample
-            if sp.any(block > 0):
-                (x,y) = sp.where(block > 0)
-                smallest = sp.argmin(bw[row+x,col+y])
-                
-                # Undo the coordinate adjustment above so the coordinates are
-                # with respect to the full image again
-                point_r = row + x[smallest] + bbox[0]
-                point_c = col + y[smallest] + bbox[1]
-
-                points.append(sp.array([point_r,point_c]))
-                
-    return sp.array(points)
-
-
-"""
-Given a set of coordinates and their bounding box, this method finds the 
-contour around those points and returns the coordinates of the contour points.
-
-Input:
-    coordinates - (Mx2 ndarray) The coordinates of all pixels in this region
-    bbox - (1x4 ndarray or list) Bounding box with [xmin, ymin, xmax, ymax]
+    regions = []
     
-Output:
-    rc - (Nx2 ndarray) The coordinates of the pixels on the region contour
-"""
-def get_contour(coordinates, bbox):  
-    # Dimensions of the bounding box
-    height = bbox[2]-bbox[0]+1
-    width  = bbox[3]-bbox[1]+1
-    
-    # Make an image that is the same size as the bounding box. Adjust
-    # coordinates so that (0,0) is the upper left corner of the bounding box.
-    # Add contour points to the image
-    bw = sp.zeros((height, width))
-    bw[coordinates[0]-bbox[0],coordinates[1]-bbox[1]] = 255
-
-    # contours is a tuple, contours[1] contains the coordinates needed
-    contours = cv2.findContours(bw.astype(sp.uint8).copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-    contours = contours[1]
-
-    # contours is a list of M contours, where each element is an Nx2 array of
-    # coordinates belonging to each contour. This code flattens the array
-    # into (M*N)x2 and removes duplicate points. 
-    contours = [sp.reshape(c,(c.shape[0]*c.shape[1], c.shape[2])) for c in contours]
-    contours = sp.concatenate(contours)
-    contours = sp.array(list(set(tuple(p) for p in contours))) # Remove duplicate points
-    
-    # contours are in terms of x,y instead of row,col, so the coordinates need
-    # to be reversed. This also undoes the coordinate adjustment done at the
-    # beginning of this function to account for using only the bounding box
-    rc = sp.column_stack((contours[:,1]+bbox[0],contours[:,0]+bbox[1]))
-    
-    return rc
-
-
-"""
-Seed points are sampled points around the contour of a region at a given 
-threshold. This method samples every X points along the contour of each 
-region in a seed region, where X is determined by how high the threshold is.
-
-The highest threshold is sampled in 2x2 blocks, the next highest in 3x3 blocks,
-etc. 
-
-Input:
-    img - (MxN ndarray) The original image
-    seedRegions - (list) List of SeedRegions to sample
-    
-Output:
-    seedRegions - (list) The list of SeedRegions
-"""
-def get_all_seed_points(img, seedRegions):    
-    for seed in seedRegions:
-        for region in seed.regions:
-            # Calculate the block size. Priority = 0 for highest threshold
-            block_size = region.priority+2
-            
-            # Find the contour and sample the points along the contour
-            edge_pts = get_contour([region.rows(),region.cols()], region.bbox)
-            seed_pts = sample_seed_points(img, edge_pts, region.bbox, block_size)
-            
-            seed.addSeedPoints(seed_pts.astype('int32'))
+    # Record the valid labelled regions in the level object.
+    for v in valid[0]:
+        if v == 0: # Background would be labeled as 0, ignore it
+            continue
         
-    return seedRegions
-
-
-"""
-Goes through all the levels and finds which regions in each level overlap with
-regions from other levels. A single stack of overlapping regions becomes a 
-"seed region" -- which defines a region where a tree will be built.
-
-Input: 
-    levels - (list) List of LevelObjects
-    somas - (list) List of FrameSomas
-    
-Output:
-    seedRegions - (list) List of SeedRegion objects
-"""
-def combine_regions(levels, somas):
-    # The lowest level will have the largest regions. Start by adding somas
-    # to these regions
-    lowestL = levels[-1]
-    seedRegions = []
-    
-    for region in lowestL.regions:
-        # Each large region is the start of a seed region
-        seedRegion = SeedRegion(region.bbox)
-
-        # See if this region contains one or more somas. More than one soma 
-        # can fit inside a region
-        for soma in somas:
-            if seedRegion.overlaps(soma.bbox):
-                seedRegion.addSoma(soma)
+        # TODO Exclude anything that comes too close to the edges ?
+        #bbox = props[v-1].bbox
+        #if (min(bbox) < 10) or (bbox[2] > (img.shape[0]-10)) \
+        #    or (bbox[3] > (img.shape[1]-10)):
+        #    continue
         
-        # If this has at least one soma, it's valid. Add it to the list
-        if seedRegion.hasSomas():
-            seedRegion.addRegion(region)
-            seedRegions.append(seedRegion)
-        
-                
-    # Now find the rest of the overlapping regions in each seed region. 
-    # Go from second-lowest level to the top level where the somas are
-    for L in levels[-2::-1]:
-        for region in L.regions:          
-            # If it matches a current known seed region, add it and go to 
-            # the next level region
-            for seed in seedRegions:
-                if seed.overlaps(region.bbox):
-                    seed.addRegion(region)
-                    break # There can only be one region this one overlaps, 
-                          # by design 
+        regions.append(RegionObject(props[v-1].coords))
+       
+    return regions
+
+
+
+def trace_skeleton(regions, somas):
+    bw = sp.zeros((1024,1024))
     
-    # Ensure that the list of regions is sorted from highest threshold to lowest              
-    for seed in seedRegions:
-        seed.regions.sort()
+    for region in regions:
+        bw[region.skeleton[:,0], region.skeleton[:,1]] = 1
         
-    return seedRegions
+    #bw = Utils.plot_cell_regions(regions, images.shape, False)
     
+    #skeleton = skmorph.skeletonize(bw)
+    
+    #rows, cols = sp.where(skeleton > 0)
+    #coordinates = sp.vstack((rows, cols)).T
+    return bw
+
 
 """
 Main function for debugging
 """
 if __name__ == '__main__':
-    img_fname = '/Users/jaclynbeck/Desktop/BaramLab/Substack (1).tif' #'/Users/jaclynbeck/Desktop/BaramLab/C2-8-29-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_.i...CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_GREEN_t1.tif'
+    img_fname = '/Users/jaclynbeck/Desktop/BaramLab/Substack (8).tif' #'/Users/jaclynbeck/Desktop/BaramLab/C2-8-29-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_.i...CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_GREEN_t1.tif'
     output_dir = '/Users/jaclynbeck/Desktop/BaramLab/'
     peak_threshold = 100
     is_stack = False
@@ -294,43 +183,24 @@ if __name__ == '__main__':
 
     start_time = timeit.default_timer()
     
-    mask = gm.create_Mask(images)
-    
-    images[mask == 0] = 0
+    images = Utils.preprocess_img(images) 
     
     #image_stack = sp.reshape(images, (1,images.shape[0], images.shape[1]))
     [soma_threshold, somas] = fs.find_somas_single_image(images)
     
-    #thresholds = pm.peaks_multithreshold(images, peak_threshold)
-    #print(thresholds)
-    [maxSig, thresholds] = omt.otsu_multithreshold(images, 20, soma_threshold)
-    print(thresholds)
+    regions = find_cell_regions(images, somas)
+    #skeleton = trace_skeleton(regions, somas)
     
-    thresholds = thresholds[thresholds < soma_threshold] 
-    
-    thresholds = sp.concatenate((thresholds, [soma_threshold]))
-    
-    levels = tl.get_levels(images, thresholds, somas)
-    
-    seedRegions = combine_regions(levels, somas)
-    seedRegions = get_all_seed_points(images, seedRegions)
-        
     elapsed = timeit.default_timer() - start_time
     print(elapsed)
     
-    
     # For debugging and display
-    print(levels)
-    
-    bw = Utils.plot_levels(levels, (1024,1024), True)    
-    sp.misc.imsave(output_dir + 'objects_' + str(thresholds.size) + '.tif', bw*255.0/bw.max())
     
     s_img = Utils.plot_somas(somas, (1024,1024), True)
     sp.misc.imsave(output_dir + 'somas.tif', s_img)
     
-    r_img = Utils.plot_seed_regions(seedRegions, (1024,1024), True)
-    sp.misc.imsave(output_dir + 'regions.tif', r_img)
+    bw = Utils.plot_cell_regions(regions, somas, (1024, 1024), True)
+    sp.misc.imsave(output_dir + 'regions.tif', bw)
     
-    cont_img = Utils.plot_seed_points(seedRegions, (1024,1024), True)
-    sp.misc.imsave(output_dir + 'contours.tif',cont_img)
-    
+    skeleton = Utils.plot_skeleton(regions, somas, (1024,1024), True)
+    sp.misc.imsave(output_dir + 'skeleton.tif', skeleton)

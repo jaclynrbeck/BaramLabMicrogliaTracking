@@ -9,107 +9,58 @@ Created on Tue Oct 10 11:03:14 2017
 import scipy as sp
 import timeit
 import matplotlib.pyplot as plt
-from mst_clustering import MSTClustering
+from mst_clustering import MSTClustering # installed with 'pip install mst_clustering'
 
 
-class Node:
-    def __init__(self, point):
-        self.point = point
-        self.children = []
-        self.parent = None
-            
-    def addChild(self, p1, p2):
-        if sp.all(self.point == p1):
-            n2 = Node(p2)
-            n2.parent = self
-            self.children.append(n2)
-            
-            return True
-        
-        for c in self.children:
-            if c.addChild(p1, p2):
-                return True
-            
-            if sp.all(c.point == p2):
-                return c.addChild(p2,p1)
-            
-        return False
+class Tree(object):
+    # Defining all the variables ahead of time with __slots__ helps with
+    # memory management and makes access quicker
+    __slots__ = 'nodes', 'distances', 'edges'
     
+    def __init__(self):
+        self.nodes = {}
+        self.distances = {}
+        self.edges = [[],[]]
     
-    def addParent(self, p1, p2):
-        if sp.all(self.point == p2):
-            self.parent = Node(p2)
-            self.parent.children.append(self)
-            return True
+    def addNode(self, node):
+        self.nodes[node] = []
         
-        if self.parent is not None:
-            return self.parent.addParent(p1, p2) or self.parent.addChild(p1,p2)
-
-    def merge(self, node):
-        pass #
-
-    def length(self):
-        if self.parent is None:
-            return 0
+    def addEdge(self, node1, node2):
+        if not node1 in self.nodes:
+            self.addNode(node1)
+            
+        if not node2 in self.nodes:
+            self.addNode(node2)
+            
+        self.nodes[node1].append(node2)
+        self.nodes[node2].append(node1)
         
-        return 1 + self.parent.length()
+    def edgesAsArray(self):
+        return [sp.array(self.edges[0]), sp.array(self.edges[1])]
     
-    def getRoot(self):
-        if self.parent is None:
-            return self
-        
-        return self.parent.getRoot()
+    def plottableEdges(self):
+        return tuple(sp.vstack(arrs) for arrs in zip(sp.array(self.edges[0]).T,
+                                                     sp.array(self.edges[1]).T))
     
     def prune(self):
-        if len(self.children) > 1:
-            self.children[:] = [x for x in self.children if len(x.children) > 0]
-            
-        for c in self.children:
-            c.prune()
-            
-    def skeletonCoords(self):
-        coords = self.point
+        nodes_to_prune = [N for N in self.nodes if len(self.nodes[N]) == 1]
+        for node in nodes_to_prune:
+            node2 = self.nodes[node][0]
+            if len(self.nodes[node2]) > 2:
+                self.nodes.pop(node, None)
+                self.nodes[node2].remove(node)
+                
+        self.createEdges()
         
-        for c in self.children:
-            childCoords = c.skeletonCoords()
-            coords = sp.column_stack((coords,childCoords))
-            
-        return coords
-    
-    
-    def printSkeleton(self, tabLevel):
-        s = tabLevel*"\t" + str(self.point) + " (" + str(self.length()) + ")"
         
-        if len(self.children) > 0:
-            s += " -> \n"
-            for c in self.children:
-                s += c.printSkeleton(tabLevel+1)
+    def createEdges(self):
+        for node1 in self.nodes:
+            for node2 in self.nodes[node1]:
+                self.edges[0].append(node1)
+                self.edges[1].append(node2)
+                
+        # TODO this does create duplicate edges
             
-        return s + "\n"
-        
-            
-    def __eq__(self, other): 
-        if type(other) is Node:
-            return sp.all(self.point == other.point)
-        else:
-            return sp.all(self.point == other)
-    
-            
-    """
-    This is what will get printed out when using print() or during debugging. 
-    """
-    def __repr__(self):
-        s = "Node: " + str(self.point) + "\n"
-        if self.parent is None:
-            s += "Parent: X\n"
-        else:
-            s += "Parent: " + str(self.parent.point) + "\n"
-            
-        s += "Children: "
-        for c in self.children:
-            s += str(c.point) + ", "
-            
-        return s + "\n"
     
         
 
@@ -127,56 +78,90 @@ def plot_mst(model, cmap='rainbow'):
     ax[1].set_title('Trimmed Minimum Spanning Tree', size=16);
     
 
-def skeletonize(model):
-    (segX,segY) = model.get_graph_segments(full_graph=False)
-    numSegments = segX.shape[1]
+def find_closest_point(point1, point_set, distances):
+    closest_point = None
+    min_dist = 9999
     
-    skeleton = []
-    
-    for i in range(1000): #numSegments):
-        p1 = sp.array([segX[0,i],segY[0,i]])
-        p2 = sp.array([segX[1,i],segY[1,i]])
+    if point1 not in distances:
+        distances[point1] = {}
         
-        found = False
-        
-        for s in skeleton:
-            if s.addChild(p1,p2):
-                found = True
-                break
-                
-            elif s.addParent(p1, p2):
-                found = True
-                break
-        
-        if found == False:
-            n1 = Node(p1)
-            n1.addChild(p1,p2)
-            skeleton.append(n1)
+    for p in point_set:
+        # TODO is searching a potentially thousands-long list any faster than
+        # recalculating the distance every time? Maybe make the dict outside
+        # this function
+        if p not in distances[point1]:
+            dist = abs(point1[0]-p[0]) + abs(point1[1]-p[1])
+            distances[point1][p] = dist
+        else:
+            dist = distances[point1][p]
             
-        for i in range(len(skeleton)):
-            skeleton[i] = skeleton[i].getRoot()  
+        if dist < min_dist:
+            min_dist = dist
+            closest_point = p
             
-    for i in sp.arange(len(skeleton)-1,0,-1):
-        if skeleton[i].merge(skeleton[i-1]):
-            skeleton[i-1] = skeleton[i-1].getRoot()
-            skeleton.remove(skeleton[i])
+    return [min_dist, closest_point]
     
-    for s in skeleton:
-        s.prune()
-        
-    return skeleton
-        
+
+def build_tree(tree, seeds):
+    point_pair = (None, None)
+    min_dist = 9999
+    
+    for t in tree.nodes:
+        [dist, point] = find_closest_point(t, seeds, tree.distances)
+        if dist < min_dist:
+            min_dist = dist
+            point_pair = (t, point)
+            
+    tree.addEdge(point_pair[0], point_pair[1])
+    seeds.remove(point_pair[1])
+    
+    if len(seeds) == 0:
+        return tree
+    
+    return build_tree(tree, seeds)
+
+
+def init_tree(seeds):
+    tree = Tree()
+    tree.addNode(seeds[0])
+    seeds.remove(seeds[0])
+    return tree
+
+
+def do_mst(seed_pts, distance):
+    model = MSTClustering(cutoff_scale=2, approximate=True, metric="precomputed")
+    labels = model.fit_predict(distance)
+    
+    G = sp.sparse.coo_matrix(model.full_tree_)
+    
+    node1 = seed_pts[G.row]
+    node2 = seed_pts[G.col]
+    
+    tree = Tree()
+    for n1, n2 in zip(node1, node2):
+        tree.addEdge(tuple(n1), tuple(n2))
+    
+    tree.prune()
+    #tree.createEdges()
+    
+    return tree.plottableEdges()
+    
           
 def build_distance_matrix(seeds):
-    numSeeds = seeds.shape[0]
+    numSeeds = len(seeds)
     distance = sp.zeros((numSeeds,numSeeds))
     
     # Fill upper triangle
     for i in range(numSeeds):
         for j in sp.arange(i+1,numSeeds):
             distance[i,j] = sum(abs(seeds[i]-seeds[j])) # geodesic distance
+    
+    # Fill lower triangle
+    for j in range(numSeeds):
+        for i in sp.arange(j+1,numSeeds):
+            distance[i,j] = distance[j,i]
             
-    distance
+    return distance
         
         
     
@@ -201,10 +186,7 @@ if __name__ == '__main__':
     elapsed = timeit.default_timer() - start_time
     print(elapsed)
     
-    skeleton = skeletonize(model)
-    coords = skeleton[0].skeletonCoords()
-    #plot_mst(model)
+    #skeleton = skeletonize(model)
+    #coords = skeleton[0].skeletonCoords()
+    plot_mst(model)
 
-
-# TODO need to relate regions to each other with the Microglia object holding 
-# all the seed points. Distance matrix only needs to be for that region
