@@ -8,10 +8,10 @@ Created on Mon Oct  2 13:12:56 2017
 
 import scipy as sp
 import skimage.measure as skm
-import skimage.filters as skf
 from libtiff import TIFFfile
 import timeit
 import Utils
+import cv2
 
 """
 This class represents a soma in a single frame
@@ -24,10 +24,8 @@ class FrameSoma(object):
     """
     Global variables for this class
     """
-    MIN_SOMA_RADIUS = 10.0 # Somas must have at least this radius to be valid
-    MIN_SOMA_SIZE = MIN_SOMA_RADIUS*MIN_SOMA_RADIUS # Somas must have at least
-                                                    # this many pixels to be
-                                                    # valid
+    MIN_SOMA_SIZE = 10*10 # Somas must have at least this many pixels to be
+                          # valid -- 100 px = 24 micrometers
     
     """
     Initializes the object.
@@ -169,7 +167,7 @@ Output:
 """
 def label_objects(bw, frame):
     # Find all interconnected pixel regions
-    labels = skm.label(bw, background=False, connectivity=2) # TODO can opencv do this faster?
+    labels = skm.label(bw, background=False, connectivity=1)
     props = skm.regionprops(labels)
     counts, edges = sp.histogram(labels, labels.max()+1)
     
@@ -196,6 +194,38 @@ def label_objects(bw, frame):
 
 
 """
+Given a set of coordinates and their bounding box, this method finds the 
+contour around those points and returns the coordinates of the contour points.
+
+Input:
+    coordinates - (list of 2 1xM ndarrays) The coordinates of all pixels in 
+                    this region. 0 is rows, 1 is columns
+    bbox - (1x4 ndarray or list) Bounding box with [xmin, ymin, xmax, ymax]
+    
+Output:
+    rc - (Nx2 ndarray) The coordinates of the pixels on the region contour
+"""
+def get_contour(img):  
+    # contours is a tuple, contours[1] contains the coordinates needed
+    contours = cv2.findContours(img.astype('uint8'), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    contours = [c for c in contours[1] if c.shape[0] > 1]
+
+    # contours is a list of M contours, where each element is an Nx2 array of
+    # coordinates belonging to each contour. This code flattens the array
+    # into (M*N)x2 and removes duplicate points. 
+    contours = [sp.reshape(c,(c.shape[0]*c.shape[1], c.shape[2])) for c in contours]
+    contours = sp.concatenate(contours)
+    contours = sp.array(list(set(tuple(p) for p in contours))) # Remove duplicate points
+    
+    # contours are in terms of x,y instead of row,col, so the coordinates need
+    # to be reversed. This also undoes the coordinate adjustment done at the
+    # beginning of this function to account for using only the bounding box
+    rc = sp.column_stack((contours[:,1]+bbox[0],contours[:,0]+bbox[1]))
+    
+    return rc
+
+
+"""
 Finds all the somas in a single max projection image. 
 
 The image is thresholded by finding the top 1% of pixels and using those
@@ -212,11 +242,13 @@ Output:
         somas - (list) List of FrameSoma objects 
 """
 def find_somas_single_image(img):
-    #threshold = skf.threshold_otsu(img[img > 0], img.max()+1)
     threshold = sp.percentile(img, 99)
     
     bw = sp.zeros_like(img, dtype='uint8')
     bw[img > threshold] = 255
+    
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(3,3))
+    bw = cv2.morphologyEx(bw, cv2.MORPH_DILATE, kernel)
 
     somas = label_objects(bw, 0)
     return [threshold, somas]
@@ -240,13 +272,15 @@ Output:
         somas_final - (list) List of Soma3D objects 
 """
 def find_somas_3D(images):
-    threshold = skf.threshold_otsu(images[images > 0], images.max()+1)
+    threshold = sp.percentile(images, 99)
     
     somas = []
     
     # For each image, threshold it and label its somas
     for z in range(images.shape[0]):
         img = images[z]
+        
+        contours = get_contour(img)
     
         bw = sp.zeros_like(img, dtype='uint8')
         bw[img > threshold] = 255
@@ -263,7 +297,7 @@ def find_somas_3D(images):
 Main method for debugging.
 """
 if __name__ == '__main__':
-    img_fname = '/Users/jaclynbeck/Desktop/BaramLab/Substack (1).tif' #'/Users/jaclynbeck/Desktop/BaramLab/C2-8-29-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_.i...CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_GREEN_DENOISED_t1.tif'
+    img_fname = '/Users/jaclynbeck/Desktop/BaramLab/C2-8-29-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_.i...CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_GREEN_t1.tif' #'/Users/jaclynbeck/Desktop/BaramLab/C2-8-29-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_.i...CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_GREEN_DENOISED_t1.tif'
     output_img = '/Users/jaclynbeck/Desktop/BaramLab/somas.tif'
     
     tiff = TIFFfile(img_fname)
@@ -271,7 +305,11 @@ if __name__ == '__main__':
 
     start_time = timeit.default_timer()
     
-    [threshold, somas] = find_somas_single_image(samples[0])
+    for i in range(samples[0].shape[0]):
+        samples[0][i] = Utils.preprocess_img(samples[0][i])
+    
+    #[threshold, somas] = find_somas_single_image(samples[0])
+    [threshold, somas] = find_somas_3D(samples[0])
     
     elapsed = timeit.default_timer() - start_time
     print(elapsed)

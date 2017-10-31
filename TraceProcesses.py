@@ -13,7 +13,35 @@ import timeit
 import Utils
 import skimage.measure as skmeas
 import skimage.morphology as skmorph
-import matplotlib.pyplot as plt
+
+
+"""
+This object is a container for bounding box coordinates. It helps keep the code
+readable and makes accessing the bounding box unambiguous. 
+"""
+class BoundingBox(object):
+    # Defining all the variables ahead of time with __slots__ helps with
+    # memory management and makes access quicker
+    __slots__ = 'row_min', 'col_min', 'row_max', 'col_max', 'size'
+    
+    
+    """
+    Initialization
+        coordinates - (Nx2 ndarray) The pixel coordinates of this region
+    """
+    def __init__(self, coordinates):
+        rows = coordinates[:,0]
+        cols = coordinates[:,1]
+        
+        self.row_min = rows.min()
+        self.row_max = rows.max()
+        self.col_min = cols.min()
+        self.col_max = cols.max()
+        
+        width  = self.col_max - self.col_min + 1
+        height = self.row_max - self.row_min + 1
+        
+        self.size = (height, width)
 
 
 """
@@ -22,7 +50,7 @@ This object represents a region of connected pixels in an image
 class RegionObject(object):
     # Defining all the variables ahead of time with __slots__ helps with
     # memory management and makes access quicker
-    __slots__ = 'coordinates', 'skeleton', 'count', 'bbox'
+    __slots__ = 'coordinates', 'skeleton', 'bbox'
     
     """
     Global variables for this object
@@ -38,12 +66,7 @@ class RegionObject(object):
     """
     def __init__(self, coordinates):
         self.coordinates = coordinates
-        self.count = self.coordinates.shape[0]
-        
-        rows = self.rows()
-        cols = self.cols()
-        self.bbox = [rows.min(),cols.min(),rows.max(),cols.max()]
-        
+        self.bbox = BoundingBox(self.coordinates)
         self.skeleton = self.skeletonize()
     
     """
@@ -85,14 +108,14 @@ class RegionObject(object):
     Skeletonizes this region so the midline of each process becomes a line.
     """
     def skeletonize(self):
-        size = [self.bbox[2]-self.bbox[0]+1, self.bbox[3]-self.bbox[1]+1]
+        size = self.bbox.size
         bw = sp.zeros(size, dtype='uint8')
         
-        bw[self.rows()-self.bbox[0], self.cols()-self.bbox[1]] = 1
+        bw[self.rows()-self.bbox.row_min, self.cols()-self.bbox.col_min] = 1
         skeleton = skmorph.skeletonize(bw)
         
         rows, cols = sp.where(skeleton > 0)
-        return sp.vstack((rows+self.bbox[0], cols+self.bbox[1])).T
+        return sp.vstack((rows+self.bbox.row_min, cols+self.bbox.col_min)).T
     
     
     """
@@ -109,12 +132,12 @@ def find_cell_regions(img, somas):
     bw = sp.zeros_like(img, dtype='uint8')
     bw[img > 0] = 255
     
-    # Remove the somas so that only processes are found
+    # Remove the somas from the image so that only processes are found
     for soma in somas:
         bw[soma.rows(), soma.cols()] = 0
     
     # Find objects that are large enough
-    labels = skmeas.label(bw, background=False, connectivity=1)
+    labels = skmeas.label(bw, connectivity=1)
     counts, edges = sp.histogram(labels, labels.max()+1)
     
     valid = sp.where((counts > RegionObject.MIN_OBJ_SIZE))
@@ -131,12 +154,6 @@ def find_cell_regions(img, somas):
     for v in valid[0]:
         if v == 0: # Background would be labeled as 0, ignore it
             continue
-        
-        # TODO Exclude anything that comes too close to the edges ?
-        #bbox = props[v-1].bbox
-        #if (min(bbox) < 10) or (bbox[2] > (img.shape[0]-10)) \
-        #    or (bbox[3] > (img.shape[1]-10)):
-        #    continue
         
         regions.append(RegionObject(props[v-1].coords))
        
@@ -163,7 +180,7 @@ def trace_skeleton(regions, somas):
 Main function for debugging
 """
 if __name__ == '__main__':
-    img_fname = '/Users/jaclynbeck/Desktop/BaramLab/Substack (8).tif' #'/Users/jaclynbeck/Desktop/BaramLab/C2-8-29-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_.i...CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_GREEN_t1.tif'
+    img_fname = '/Users/jaclynbeck/Desktop/BaramLab/Substack (8-43).tif' #'/Users/jaclynbeck/Desktop/BaramLab/C2-8-29-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_.i...CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_GREEN_t1.tif'
     output_dir = '/Users/jaclynbeck/Desktop/BaramLab/'
     peak_threshold = 100
     is_stack = False

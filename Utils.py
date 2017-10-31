@@ -9,7 +9,7 @@ Created on Thu Oct 12 15:19:03 2017
 import cv2
 import scipy as sp
 import matplotlib.pyplot as plt
-from AmbrosioTortorelliMinimizer import *
+#from AmbrosioTortorelliMinimizer import *
 
 
 """
@@ -41,10 +41,10 @@ def preprocess_img(img):
     img = equalize_img(img)
     img = denoise_img(img).astype('uint8')
     
-    bw = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                               cv2.THRESH_BINARY, 65, 0)
+    #bw = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+    #                           cv2.THRESH_BINARY, 65, 0)
     
-    img[bw==0] = 0
+    #img[bw==0] = 0
     
     return img
     
