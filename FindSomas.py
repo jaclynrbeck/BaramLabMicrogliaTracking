@@ -13,18 +13,41 @@ import timeit
 import Utils
 import cv2
 
+
+"""
+This class represents a bounding box. This is here for readability so that the
+indexing in the bounding box is unambiguous. 
+"""
+class BoundingBox(object):
+    __slots__ = 'row_min', 'row_max', 'col_min', 'col_max'
+    
+    def __init__(self, row_min, col_min, row_max, col_max):
+        self.row_min = row_min
+        self.col_min = col_min
+        self.row_max = row_max
+        self.col_max = col_max
+        
+    def asArray(self):
+        return sp.array([self.row_min, self.col_min, self.row_max, self.col_max])
+    
+    def width(self):
+        return self.col_max - self.col_min + 1
+    
+    def height(self):
+        return self.row_max - self.row_min + 1
+    
 """
 This class represents a soma in a single frame
 """
 class FrameSoma(object):
     # Defining all the variables ahead of time with __slots__ helps with
     # memory management and makes access quicker
-    __slots__ = 'frameNum', 'coordinates', 'bbox', 'centroid'
+    __slots__ = 'frameNum', 'coordinates', 'bbox', 'centroid', 'contour'
     
     """
     Global variables for this class
     """
-    MIN_SOMA_SIZE = 10*10 # Somas must have at least this many pixels to be
+    MIN_SOMA_SIZE = 20*20 # Somas must have at least this many pixels to be
                           # valid -- 100 px = 24 micrometers
     
     """
@@ -34,16 +57,25 @@ class FrameSoma(object):
         bbox - (1x4 ndarray, list, or tuple) Bounding box of the soma 
                containing the fields [xmin, ymin, xmax, ymax]
     """
-    def __init__(self, frameNum, coords, bbox):
+    def __init__(self, frameNum, coords, bbox=None, contour=None):
         self.frameNum = frameNum
         self.coordinates = coords
-        self.bbox = sp.array(bbox)
+        
+        if bbox is None:
+            self.calculateBBox()
+        else:    
+            self.bbox = bbox
+            
+        if contour is None:
+            self.calculateContour()
+        else:
+            self.contour = contour
         
         # The centroid is the mean of rows and mean of columns, turned into
-        # a 1x2 ndarray
+        # a (2,) ndarray
         self.centroid = sp.round_( sp.array( (sp.mean(self.coordinates[:,0]), 
-                                              sp.mean(self.coordinates[:,1])), 
-                                              ndmin=2 ) )
+                                              sp.mean(self.coordinates[:,1])) 
+                                            )).astype('int16')
     
     """
     Shortcut for accessing the image row coordinates
@@ -58,12 +90,57 @@ class FrameSoma(object):
         return self.coordinates[:,1]
     
     """
+    Shortcut for accessing the contour row coordinates
+    """
+    def contourRows(self):
+        return self.contour[:,0]
+    
+    """
+    Shortcut for accessing the contour column coordinates
+    """
+    def contourCols(self):
+        return self.contour[:,1]
+    
+    """
+    Calculates this soma's bounding box
+    """
+    def calculateBBox(self):
+        self.bbox = BoundingBox(min(self.coordinates[:,0]), 
+                                min(self.coordinates[:,1]), 
+                                max(self.coordinates[:,0]), 
+                                max(self.coordinates[:,1]))
+    
+    """
+    Calculates the contour of the soma
+    """    
+    def calculateContour(self):
+        bw = sp.zeros((self.bbox.height(), self.bbox.width()), dtype='uint8')
+        bw[self.rows()-self.bbox.row_min, self.cols()-self.bbox.col_min] = 1
+        
+        contours = cv2.findContours(bw, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        contours = [c for c in contours[1] if c.shape[0] > 1]
+    
+        # contours is a list of M contours, where each element is an Nx2 array of
+        # coordinates belonging to each contour. This code flattens the array
+        # into (M*N)x2 and removes duplicate points. 
+        contours = [sp.reshape(c,(c.shape[0]*c.shape[1], c.shape[2])) for c in contours]
+        contours = sp.concatenate(contours)
+        contours = sp.array(list(set(tuple(p) for p in contours))) # Remove duplicate points
+        
+        # contours are in terms of x,y instead of row,col, so the coordinates need
+        # to be reversed. This also undoes the coordinate adjustment done at the
+        # beginning of this function to account for using only the bounding box
+        self.contour = sp.column_stack((contours[:,1]+self.bbox.row_min,
+                                        contours[:,0]+self.bbox.col_min))
+        
+    
+    """
     This is what will get printed out when using print(frame) 
     """
     def __repr__(self):
         s = "Frame:\t" + str(self.frameNum) + "\n" + \
-            "Centroid: [" + str(int(self.centroid[0,0])) + ", " + \
-                            str(int(self.centroid[0,1])) + "]\n" + \
+            "Centroid: [" + str(int(self.centroid[0])) + ", " + \
+                            str(int(self.centroid[1])) + "]\n" + \
             "Box:\t" + str(self.bbox)
             
         return s
@@ -187,8 +264,10 @@ def label_objects(bw, frame):
         if (min(bbox) <= 10) or (max(bbox) >= bw.shape[0]-10):
             continue
         
+        bbox_obj = BoundingBox(bbox[0], bbox[1], bbox[2], bbox[3])
+        
         # Create the soma object and add it to the list
-        somas.append(FrameSoma(frame, props[v-1].coords, bbox))
+        somas.append(FrameSoma(frame, props[v-1].coords, bbox_obj))
     
     return somas
 
