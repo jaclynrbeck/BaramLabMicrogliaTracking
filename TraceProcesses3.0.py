@@ -102,12 +102,11 @@ def trace_image(img, index, kernel, output_dir):
 Main function for debugging
 """
 if __name__ == '__main__':
-    img_fname  = '/Users/jaclynbeck/Desktop/BaramLab/8-29-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Female 1 L PVN_b_4D_1.ims - C=1.tif' #'/Users/jaclynbeck/Desktop/BaramLab/C2-8-29-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_.i...CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_GREEN_t1.tif'
+    img_fname  = '/Users/jaclynbeck/Desktop/BaramLab/averaged_max_projection.tif' #'/Users/jaclynbeck/Desktop/BaramLab/C2-8-29-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_.i...CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_GREEN_t1.tif'
     output_dir = '/Users/jaclynbeck/Desktop/BaramLab/'
 
     tif = TIFF.open(img_fname, mode='r')
     out_tif = TIFF.open(output_dir + 'tst2.tif', mode='w')
-    averaged_tif = TIFF.open(output_dir + 'averaged.tif', mode='w')
     
     start_time = timeit.default_timer()
     index = 0
@@ -117,20 +116,10 @@ if __name__ == '__main__':
     window = []
     
     for img in tif.iter_images(): 
-        img.byteswap(True)
-        window.append(img)
-        
-        if len(window) < 3:
-            continue
-        
-        averaged = (window[0] + window[1] + window[2])
-        
-        skeleton = trace_image(averaged, index, kernel, output_dir)
+        skeleton = trace_image(img, index, kernel, output_dir)
             
         index += 1
-        window.clear() #.remove(window[0])
         out_tif.write_image(skeleton)
-        averaged_tif.write_image(averaged.astype('uint16'))
         
     elapsed = timeit.default_timer() - start_time
     print(elapsed)
