@@ -12,7 +12,9 @@ import cv2
 import timeit
 from skimage.measure import ransac
 from skimage.transform import AffineTransform
-#from matplotlib import pyplot as plt
+import Utils
+import javabridge # required by bioformats
+import bioformats # installed with pip install python-bioformats
 
 
 def warp_image_affine(img, drift):
@@ -34,12 +36,10 @@ def register_with_SIFT(img1, img2):
     matches = bf.match(des2,des1) # des2 = query, des1 = training
     matches = [(M.trainIdx, M.queryIdx) for M in matches]
     
-    #diffs = []
     src = []
     dst = []
     
     for m in matches:
-        #diffs.append(sp.array(kp2[m[1]].pt) - sp.array(kp1[m[0]].pt))
         src.append(sp.array(kp1[m[0]].pt))
         dst.append(sp.array(kp2[m[1]].pt))
 
@@ -49,8 +49,8 @@ def register_with_SIFT(img1, img2):
     
     drift = cv2.estimateRigidTransform(sp.array(dst)[inliers], sp.array(src)[inliers], True)
     print(sp.round_(drift, 2))
-    #drift = sp.round_(sp.mean(sp.array(diffs)[inliers], axis=0)).astype('int16')
-    return drift #sp.array([[1, 0, -drift[0]], [0, 1, -drift[1]]])
+
+    return drift 
 
 
 def register_affine(img1, img2):
@@ -59,53 +59,69 @@ def register_affine(img1, img2):
 
 
 def preprocess_images_2D(img_fname, output_fname, window_size):
-    img_tif  = TIFF.open(img_fname, mode='r')
+    javabridge.start_vm(class_path=bioformats.JARS)
     averaged_tif = TIFF.open(output_fname, mode='w')
     
+    xml = bioformats.get_omexml_metadata(path=img_fname)
+    ome_xml = bioformats.OMEXML(xml)
+    sizeX = ome_xml.image().Pixels.SizeX
+    sizeY = ome_xml.image().Pixels.SizeY
+    numImages = ome_xml.image().Pixels.SizeT
+    physX = ome_xml.image().Pixels.PhysicalSizeX
+    physY = ome_xml.image().Pixels.PhysicalSizeY
+    
+    print("File contains " + str(numImages) + " images. Size: " + str(sizeX) \
+          + " x " + str(sizeY) + " px (" + str(physX*sizeX) + " x " + \
+          str(physY*sizeY) +  " um)")
+    
     window = []
+    img0 = None
     
-    img0 = img_tif.read_image()
-    img0.byteswap(True)
-    img0 = (img0 * (255.0/img0.max())).astype('uint8')
+    with bioformats.ImageReader(img_fname) as reader:
+        for t in range(numImages):
+            img = reader.read(c=1, z=0, t=t, series=None, index=None, rescale=True, wants_max_intensity=False, channel_names=None, XYWH=None)
+            img = (img*65536).astype('uint16')
+            img = Utils.preprocess_img(img)
+            
+            if img0 is not None:
+                drift = register_affine(img0, img)
     
-    for img in img_tif.iter_images():
-        img.byteswap(True)
+                # Warp the image
+                new_img = warp_image_affine(img, drift)
+            else:
+                new_img = img
+                
+            window.append(new_img)
+            
+            # Keep the warped image for the next round of registration
+            img0 = new_img
+            
+            if len(window) < window_size:
+                continue
+            
+            # Sum all images in the window. Don't bother dividing since it doesn't
+            # really matter for this image set (no potential for overflow of the
+            # uint16 limit). 
+            averaged = sum(window)
+            averaged_tif.write_image(averaged.astype('uint8'))
         
-        # OpenCV registration function requires a uint8 image
-        img_uint8 = (img * (255.0/img.max())).astype('uint8')
-        drift = register_affine(img0, img_uint8)
-        
-        # Warp the original uint16 image
-        new_img = warp_image_affine(img, drift)
-        window.append(new_img)
-        
-        # Keep the uint8 version of the warped image for the next round of 
-        # registration
-        img0 = (new_img * (255.0/new_img.max())).astype('uint8')
-        
-        if len(window) < window_size:
-            continue
-        
-        # Sum all images in the window. Don't bother dividing since it doesn't
-        # really matter for this image set (no potential for overflow of the
-        # uint16 limit). 
-        averaged = sum(window)
-        averaged_tif.write_image(averaged.astype('uint16'))
-        
-        window.clear() #.remove(window[0])
+            window.clear() 
+            
+        reader.close()
 
-    img_tif.close()
     averaged_tif.close()
+    
+    javabridge.kill_vm()
 
 
 
 if __name__=='__main__':
-    img_fname    = '/Users/jaclynbeck/Desktop/BaramLab/8-29-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Female 1 L PVN_b_4D_1.ims - C=1.tif' #'/Users/jaclynbeck/Desktop/BaramLab/C2-8-29-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_.i...CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_GREEN_t1.tif'
-    output_fname = '/Users/jaclynbeck/Desktop/BaramLab/averaged_max_projection.tif'
+    img_fname    = '/Users/jaclynbeck/Desktop/BaramLab/videos/D_LPVN_T1_07182017/7-18-17_crh-tdtomato+cx3cr1-gfp p8 pvn ctrl_female 2 l pvn t1_b_4d_female 2 l pvn t1.ims' 
+    output_fname = '/Users/jaclynbeck/Desktop/BaramLab/videos/D_LPVN_T1_07182017/processed_max_projection.tif'
     
     start_time = timeit.default_timer()
 
-    preprocess_images_2D(img_fname, output_fname, 3)
+    preprocess_images_2D(img_fname, output_fname, 1)
             
     elapsed = timeit.default_timer() - start_time
     print(elapsed)
