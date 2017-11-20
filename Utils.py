@@ -89,6 +89,35 @@ def bbox_significant_overlap(bbox1, bbox2, overlap_percent):
     return False
     
 
+def neighbors_graph(points1, points2):
+    dist_matrix = sp.zeros((len(points1), len(points2)))
+    
+    for p in range(len(points1)):
+        dist_matrix[p,:] = sp.sqrt(sp.sum((points2 - points1[p])**2, axis=1))
+        
+    return dist_matrix
+
+
+def find_matches(points1, points2):
+    matches = []
+    dist_matrix = neighbors_graph(points1, points2)
+        
+    closest1 = sp.argmin(dist_matrix, axis=1)
+    closest2 = sp.argmin(dist_matrix, axis=0)
+    
+    for c in range(len(closest1)):
+        if closest2[closest1[c]] == c:
+            matches.append((c, closest1[c]))
+        
+    return matches
+    
+    
+def nearest_neighbor(point, other_points):
+    dist = sp.sqrt(sp.sum((other_points - point)**2, axis=1))
+    closest_index = sp.argmin(dist)
+    
+    return (other_points[closest_index], dist[closest_index], closest_index)
+
     
 def plot_levels(levels, img_size, display=False):
     bw = sp.zeros(img_size, dtype='uint16')

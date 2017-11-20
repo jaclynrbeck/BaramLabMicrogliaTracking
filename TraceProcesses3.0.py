@@ -8,7 +8,6 @@ Created on Thu Oct  5 20:54:49 2017
 
 import scipy as sp
 import timeit
-import Utils
 import skimage.morphology as skm
 from libtiff import TIFF
 import cv2
@@ -68,20 +67,36 @@ def parse_regions(skeleton):
         
 
 def trace_image(img, index, kernel, output_dir):
-    img = Utils.preprocess_img(img)
+    sobelx = cv2.Sobel(img, cv2.CV_32F, 1, 0, ksize=3)
+    sobely = cv2.Sobel(img, cv2.CV_32F, 0, 1, ksize=3)
+    sobelxy = sp.sqrt(sobelx**2 + sobely**2)
+    sobelxy = (sobelxy * (255.0/sobelxy.max())).astype('uint8')
     
-    thresholds = get_thresholds(img)  
-    skeletons = sp.zeros_like(img, dtype='uint8')
+    #sp.misc.imsave("/Users/jaclynbeck/Desktop/BaramLab/sobel_"+str(z)+".tif", sobelxy)
+    
+    thresh = sp.percentile(sobelxy, 80)
+    bw = sp.zeros_like(sobelxy)
+    bw[sobelxy > thresh] = 255
+    
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(3,3))
+    #bw_closed = cv2.morphologyEx(bw, cv2.MORPH_CLOSE, k)
+    #bw_closed = cv2.morphologyEx(bw_closed, cv2.MORPH_ERODE, k)
+    
+    im2, contours, hierarchy = cv2.findContours(bw, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    bw2 = cv2.drawContours(sp.zeros_like(bw), contours, -1, 1, thickness=-1)
+    
+    bw2 = cv2.morphologyEx(bw2, cv2.MORPH_ERODE, k)
 
-    for t in thresholds: 
-        skeletons += skeletonize_level(img, t)  
-        
-    skeletons[skeletons < 2] = 0
+    #cv2.imshow("contours", bw2)
+    #cv2.imshow("sobel", sobelxy)
+    #n_components, labels = cv2.connectedComponents(edges, connectivity=8)
+    #cv2.imshow("edges", edges)
+    #cv2.waitKey()
     
-    #skeletons = parse_regions(skeletons)
+    skeleton_final = skm.skeletonize(bw2).astype('uint8')*128
     
-    new_skeleton = cv2.morphologyEx(sp.minimum(skeletons, 1), cv2.MORPH_CLOSE, kernel)
-    skeleton_final = skm.skeletonize(new_skeleton).astype('uint8')*128
+    #new_skeleton = cv2.morphologyEx(sp.minimum(skeletons, 1), cv2.MORPH_CLOSE, kernel)
+    #skeleton_final = skm.skeletonize(new_skeleton).astype('uint8')*128
     
     [soma_threshold, somas] = fs.find_somas_single_image(img)
     for soma in somas:
@@ -92,8 +107,8 @@ def trace_image(img, index, kernel, output_dir):
         skeleton_final[soma.centroid[0], soma.centroid[1]] = 255
         skeleton_final[soma.contourRows(), soma.contourCols()] = 200
 
-    add_value = 128-skeletons.max()
-    skeleton_final[skeleton_final == 128] = skeletons[skeleton_final == 128] + add_value
+    #add_value = 128-skeletons.max()
+    #skeleton_final[skeleton_final == 128] = skeletons[skeleton_final == 128] + add_value
 
     return skeleton_final
     
@@ -102,11 +117,11 @@ def trace_image(img, index, kernel, output_dir):
 Main function for debugging
 """
 if __name__ == '__main__':
-    img_fname  = '/Users/jaclynbeck/Desktop/BaramLab/averaged_max_projection.tif' #'/Users/jaclynbeck/Desktop/BaramLab/C2-8-29-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_.i...CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_GREEN_t1.tif'
+    img_fname  = '/Users/jaclynbeck/Desktop/BaramLab/processed_max_projection.tif' #'/Users/jaclynbeck/Desktop/BaramLab/C2-8-29-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_.i...CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_GREEN_t1.tif'
     output_dir = '/Users/jaclynbeck/Desktop/BaramLab/'
 
     tif = TIFF.open(img_fname, mode='r')
-    out_tif = TIFF.open(output_dir + 'tst2.tif', mode='w')
+    out_tif = TIFF.open(output_dir + 'processed_skeleton_max_projection.tif', mode='w')
     
     start_time = timeit.default_timer()
     index = 0
