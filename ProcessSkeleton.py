@@ -308,6 +308,7 @@ class Tree(object):
     """
     def draw(self):
         coords = sp.array([C for C in self.coordinates.values()])
+        coords = coords[:,0:2].astype('int16')
         mn = [min(coords[:,0]), min(coords[:,1])]
         mx = [max(coords[:,0]), max(coords[:,1])]
         height = mx[0]-mn[0]+1
@@ -553,29 +554,35 @@ def skeleton_to_tree(skeleton, somas=None):
     
     return trees
     
-            
 
-    
-if __name__=='__main__':
-    skeleton_fname = "/Users/jaclynbeck/Desktop/BaramLab/tst2.tif"
-    img_fname = "/Users/jaclynbeck/Desktop/BaramLab/averaged_max_projection.tif"        
-    
-    img_tif = TIFF.open(img_fname, mode='r')
+"""
+Main method for this file. Translates all skeleton images in a video into
+Tree objects, which are directed graphs centered around a soma centroid. 
+"""
+def process_skeleton(skeleton_fname):
     skel_tif = TIFF.open(skeleton_fname, mode='r')
-    
-    start_time = timeit.default_timer()
+
     frame = 0
-    
     trees = {}
     
     for skel in skel_tif.iter_images(): 
-        #start_time = timeit.default_timer()
         trees[frame] = skeleton_to_tree(skel)
         frame += 1
-        #elapsed = timeit.default_timer() - start_time
-        #print(elapsed)
+        
+    skel_tif.close()
+    
+    return trees
+
+        
+
+if __name__=='__main__':
+    skeleton_fname = "/Users/jaclynbeck/Desktop/BaramLab/tst2.tif"
+    
+    start_time = timeit.default_timer()
+    
+    trees = process_skeleton(skeleton_fname)
         
     elapsed = timeit.default_timer() - start_time
     print(elapsed)
 
-    skel_tif.close()
+
