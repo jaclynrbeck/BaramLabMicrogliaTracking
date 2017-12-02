@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+Run this file to batch process multiple videos at once. This file ingests a
+comma-separated values (.csv) file to determine which files get which kinds
+of processing. It then calls the appropriate processing functions on those
+files. See the description of the VideoData class for csv format. 
+
 Created on Thu Nov 30 14:06:41 2017
 
 @author: jaclynbeck
 """
 
-import PreprocessImages2D as pp
+import DeconvolveImages2D as dc
 import TraceProcesses2D as tp
 import ProcessSkeleton as ps
 import AnalyzeVideo as av
@@ -19,7 +24,8 @@ This class holds all the information from a line in the csv file in a more
 human-readable way. 
 
 The csv file must have the following fields, in order, separated by commas:
-    psf_file:        Full file path of the PSF file to use for deconvolution. 
+    psf_file:        Full file path of the point spread function (PSF) file to 
+                     use for deconvolution. 
                          - PSF file must be a .png
     ims_file:        Full file path of the .ims file to process
     metadata_file:   local file name where metadata will be saved. 
@@ -147,7 +153,7 @@ def call_deconvolve(v):
     start_time = timeit.default_timer()
     
     # Deconvolve
-    pp.preprocess_images_2D(v.ims_file, v.dc_output, v.psf_file, \
+    dc.deconvolve_images_2D(v.ims_file, v.dc_output, v.psf_file, \
                             v.metadata_file, 1, v.deconvolutions)
     
     elapsed = timeit.default_timer() - start_time
