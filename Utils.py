@@ -9,6 +9,7 @@ Created on Thu Oct 12 15:19:03 2017
 import cv2
 import scipy as sp
 import matplotlib.pyplot as plt
+from scipy import sparse
 #from AmbrosioTortorelliMinimizer import *
 
 
@@ -214,6 +215,23 @@ def plot_skeleton(regions, somas, img_size, display=False):
     for soma in somas:
         bw[soma.rows(), soma.cols()] = 255
     
+    if display:
+        plt.imshow(bw)
+        plt.show()
+        
+    return bw
+
+
+def plot_tree_csr(tree_csr, points, img_size, display=False):
+    bw = sp.zeros(img_size, dtype='uint8')
+    N = sparse.coo_matrix(tree_csr)
+    
+    X = points[:,0:2]
+    X = X[:,::-1]
+    
+    for p1, p2 in zip(N.row, N.col): 
+        bw = cv2.line(bw, tuple(X[p1].astype('int16')), tuple(X[p2].astype('int16')), 255)
+        
     if display:
         plt.imshow(bw)
         plt.show()

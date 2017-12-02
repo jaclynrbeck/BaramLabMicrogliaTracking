@@ -5,8 +5,9 @@ Created on Tue Oct 24 16:04:32 2017
 
 @author: jaclynbeck
 
-The minimum spanning tree code is heavily based on code from 
-https://github.com/jakevdp/mst_clustering , but without clustering
+The minimum spanning tree code is based on code from 
+https://github.com/jakevdp/mst_clustering , but without clustering and some
+extra modifications to account for somas. 
 """
 
 import scipy as sp
@@ -18,6 +19,9 @@ from scipy.sparse.csgraph import minimum_spanning_tree, connected_components, di
 from sklearn.neighbors import kneighbors_graph
 from scipy import sparse
 import FindSomas as fs
+import Utils
+import pickle
+import os
         
 
 """
@@ -53,7 +57,7 @@ class DirectedNode(object):
     """    
     def addParent(self, node):
         self.parent = node
-        self.length = self.parent.length + 1
+        self.length = self.parent.length + sp.sqrt(sp.sum((self.parent.coordinates[0:2]-self.coordinates[0:2])**2))
         
     
     """
@@ -127,8 +131,7 @@ class DirectedNode(object):
 
 """
 This class represents a minimum spanning tree found from the skeleton in the 
-image. It starts as undirected but then is made to be a directed graph once
-all edges are added. 
+image. It is undirected.
 
 Class variables:
     nodes       - Dictionary where the keys are the node IDs and the values
@@ -140,7 +143,7 @@ Class variables:
                   corresponds to the soma centroid if this tree "belongs" to a
                   cell. 
 """
-class Tree(object):
+class UndirectedTree(object):
     # Defining all the variables ahead of time with __slots__ helps with
     # memory management and makes access quicker
     __slots__ = 'nodes', 'coordinates', 'leaves', 'centerNode'
@@ -198,13 +201,60 @@ class Tree(object):
     """
     def setCenterNode(self, nodeNum):
         self.centerNode = DirectedNode(nodeNum, self.coordinates[nodeNum])
+        
+        
+    """
+    For debugging. This will draw the tree on an image that is the same size 
+    as the spread of the tree. 
+    """
+    def draw(self):
+        coords = sp.array([C for C in self.coordinates.values()])
+        coords = coords[:,0:2].astype('int16')
+        mn = [min(coords[:,0]), min(coords[:,1])]
+        mx = [max(coords[:,0]), max(coords[:,1])]
+        height = mx[0]-mn[0]+1
+        width = mx[1]-mn[1]+1
+        
+        bw = sp.zeros((height, width), dtype="uint8")
+        bw[coords[:,0]-mn[0], coords[:,1]-mn[1]] = 1
+        
+        plt.imshow(bw); plt.show()
+        
     
+    """
+    For debugging. This will draw the tree on the full image containing all
+    trees. 
+    
+    Input:
+        bw - the image to draw the tree onto
+    """
+    def drawOnImage(self, bw):
+        for key, vals in self.nodes.items():
+            pt1 = self.coordinates[key]
+            
+            for v in vals:
+                pt2 = self.coordinates[v]
+                cv2.line(bw, (int(pt1[1]), int(pt1[0])), (int(pt2[1]), int(pt2[0])), 255)
+
+        return bw
+    
+    
+    
+class DirectedTree(object):
+    __slots__ = 'nodes', 'leaves', 'centerNode'
+    
+    def __init__(self, tree):
+        self.nodes = []
+        self.leaves = []
+        self.centerNode = tree.centerNode
+    
+        self.makeDirected(tree)
 
     """
     Turns the undirected tree into a directed tree by following edges out 
     from the center node to the leaves. 
     """    
-    def makeDirected(self):
+    def makeDirected(self, uTree):
         # If no center node was set, this tree wasn't associated with a soma
         # but we will trace it anyway. The center node is set as the node
         # with the most connections to other nodes. 
@@ -212,15 +262,15 @@ class Tree(object):
             max_node = 0
             max_connections = 0
             
-            for node, vals in self.nodes.items():
+            for node, vals in uTree.nodes.items():
                 if len(vals) > max_connections:
                     max_node = node
                     max_connections = len(vals)
             
-            self.centerNode = DirectedNode(max_node, self.coordinates[max_node])
+            self.centerNode = DirectedNode(max_node, uTree.coordinates[max_node])
         
         # Trace outward from the center node
-        self.trace(self.centerNode)
+        self.trace(uTree, self.centerNode)
         
     
     """
@@ -232,8 +282,9 @@ class Tree(object):
     Input:
         node - DirectedNode being inspected
     """
-    def trace(self, node):
-        connections = self.nodes[node.value]
+    def trace(self, uTree, node):
+        self.nodes.append(node)
+        connections = uTree.nodes[node.value]
         
         # If this node has only one connection, and that connection is this
         # node's parent, this node is a leaf. Stop recursion. 
@@ -248,10 +299,10 @@ class Tree(object):
             if node.parent is not None and node.parent.value == c:
                 continue
             
-            c_node = DirectedNode(c, self.coordinates[c])
+            c_node = DirectedNode(c, uTree.coordinates[c])
             c_node.addParent(node)
             node.children.append(c_node)
-            self.trace(c_node)
+            self.trace(uTree, c_node)
 
     
     """
@@ -290,52 +341,90 @@ class Tree(object):
         # Remove this node from the parent node's list of children
         if node.parent is not None:
             node.parent.children.remove(node)
+         
+        # Remove this node from the master list of nodes
+        self.nodes.remove(node)
         
-        # Remove this node from the coordinates list and remove references to 
-        # it in the list of nodes
-        self.coordinates.pop(node.value)
-        vals = self.nodes.pop(node.value)
-        for v in vals:
-            self.nodes[v].remove(node.value)
-        
-        # Finally, delete the object to free up memory
+        # Delete the object to free up memory
         del node
         
-        
-    """
-    For debugging. This will draw the tree on an image that is the same size 
-    as the spread of the tree. 
-    """
-    def draw(self):
-        coords = sp.array([C for C in self.coordinates.values()])
-        coords = coords[:,0:2].astype('int16')
-        mn = [min(coords[:,0]), min(coords[:,1])]
-        mx = [max(coords[:,0]), max(coords[:,1])]
-        height = mx[0]-mn[0]+1
-        width = mx[1]-mn[1]+1
-        
-        bw = sp.zeros((height, width), dtype="uint8")
-        bw[coords[:,0]-mn[0], coords[:,1]-mn[1]] = 1
-        
-        plt.imshow(bw); plt.show()
-        
-    
-    """
-    For debugging. This will draw the tree on the full image containing all
-    trees. 
-    
-    Input:
-        bw - the image to draw the tree onto
-    """
-    def drawOnImage(self, bw):
-        for key, vals in self.nodes.items():
-            pt1 = self.coordinates[key]
             
-            for v in vals:
-                pt2 = self.coordinates[v]
-                cv2.line(bw, (int(pt1[1]), int(pt1[0])), (int(pt2[1]), int(pt2[0])), 255)
+    def __getstate__(self):
+        stateDict = {'nodes': self.nodes,
+                     'leaves': self.leaves, 
+                     'centerNode': self.centerNode}
+        
+        for node in stateDict['nodes']:
+            if node.parent is not None:
+                node.parent = stateDict['nodes'].index(node.parent)
+                
+            if len(node.children) > 0:
+                new_children = []
+                for c in node.children:
+                    new_children.append(stateDict['nodes'].index(c))
+                node.children = new_children
 
-        return bw
+        return stateDict
+    
+    def __setstate__(self, stateDict):
+        self.nodes = stateDict['nodes']
+        self.leaves = stateDict['leaves']
+        self.centerNode = stateDict['centerNode']
+        
+        for node in self.nodes:
+            if node.parent is not None:
+                node.parent = self.nodes[node.parent]
+            
+            if len(node.children) > 0:
+                new_children = []
+                for c in node.children:
+                    new_children.append(self.nodes[c])
+                    
+                node.children = new_children
+        
+    
+class TreeSeries(object):
+    __slots__ = 'frames', 'trees'
+    
+    def __init__(self, frame, tree):
+        self.frames = [frame]
+        self.trees = {frame: tree}
+        
+    def addTree(self, frame, tree):
+        self.frames.append(frame)
+        self.trees[frame] = tree
+        
+        
+    def isMatch(self, frame, tree):
+        if frame in self.frames:
+            return (False, -1)
+        
+        lastFrame = sorted(self.frames)[-1]
+        if frame - lastFrame >= 3:
+            return (False, -1)
+        
+        lastTree = self.trees[lastFrame]
+        
+        coords1 = set([tuple(C[:2]) for n, C in lastTree.coordinates.items()])
+        coords2 = set([tuple(C[:2]) for n, C in tree.coordinates.items()])
+        
+        intersect = set.intersection(coords1, coords2)
+        if len(intersect) > 0:
+            return (True, len(intersect))
+        
+        return (False, -1)
+    
+    
+    def distanceTo(self, mainTree):
+        for f, tree in self.trees.items():
+            dists = Utils.neighbors_graph(tree.coordinates, mainTree.coordinates)
+            
+                
+    def __lt__(self, other):
+        return len(self.trees) < len(other.trees)
+        
+    
+    
         
 
 """
@@ -366,40 +455,80 @@ def split_somas(tree_csr, soma_indices):
             soma1 = soma_indices[i]
             soma2 = soma_indices[j]
             
-            # If a path exists, trace it and break it in the middle
+            # If a path exists, trace it and break it at the longest gap
             if dist[i,soma2] != sp.inf and dist[i, soma2] > 0:
                 path = []
                 p = soma2
                 while p != soma1:
+                    distance = max(lil_tree[p, points[i,p]], lil_tree[points[i,p], p])
                     # Sanity check. It's possible to have already broken this
                     # path if, for example, 3 somas are connected in a line
-                    if (lil_tree[p, points[i,p]] == 0) and (lil_tree[points[i,p], p] == 0):
+                    if distance == 0:
                         path = []
                         break
                     
-                    path.append(p)
+                    path.append((sp.round_(distance, 1), p))
                     p = points[i,p] # This points us to the next node in the path
             
             
                 if len(path) > 0:
-                    break_pt = int(len(path)/2) # TODO better/smarter break point?
+                    arr = sp.array(path)
+                    index = sp.where(arr[:,0] == arr[:,0].max())[0]
+                    break_pt = sorted(index)[int(round(len(index)/2))]
             
                     # This effectively deletes the break point from the tree
-                    lil_tree[path[break_pt], path[break_pt-1]] = 0
-                    lil_tree[path[break_pt-1], path[break_pt]] = 0
-                    lil_tree[path[break_pt], path[break_pt+1]] = 0
-                    lil_tree[path[break_pt+1], path[break_pt]] = 0
+                    if break_pt < len(arr)-1:
+                        lil_tree[arr[break_pt,1], arr[break_pt+1,1]] = 0
+                        lil_tree[arr[break_pt+1,1], arr[break_pt,1]] = 0
     
     tree_csr = lil_tree.tocsr()
     tree_csr.eliminate_zeros()
     
     return tree_csr
     
-
+def split_tree(tree_csr, X, img):
+    threshold = sp.percentile(img, 20)
+    N = sparse.coo_matrix(tree_csr)  # For easier indexing into the tree
+    
+    # Using a linked-list format sparse matrix is faster for this task
+    lil_tree = tree_csr.tolil()
+    
+    for p1, p2 in zip(N.row, N.col):
+        if lil_tree[p1,p2] < 2:
+            continue
+        
+        point1 = X[p1]
+        point2 = X[p2]
+        
+        if int(point1[0]) == int(point2[0]):
+            sign = sp.sign(point2[1]-point1[1])
+            cols = sp.arange(point1[1], point2[1], sign).astype('int16') 
+            rows = sp.full(cols.shape, point1[0].astype('int16'))
+            
+        else:
+            m = float(point1[1]-point2[1]) / float(point1[0]-point2[0])
+            b = sp.mean( [point1[1]-m*point1[0], point2[1]-m*point2[0]] )
+        
+            sign = sp.sign(point2[0]-point1[0])
+            rows = sp.arange(point1[0], point2[0], sign).astype('int16')
+            cols = sp.round_(m*rows + b).astype('int16')
+        
+        for r,c in zip(rows, cols):
+            if img[r,c] < threshold:
+                lil_tree[p1,p2] = 0
+                lil_tree[p2,p1] = 0
+                break
+    
+    tree_csr = lil_tree.tocsr()
+    tree_csr.eliminate_zeros()
+    
+    return tree_csr
+    
+    
 """
 Extracts soma centroids and contours from the information encoded in the 
-skeleton image. Centroids have pixel values of 255 and contours have pixel
-values of 200. 
+skeleton image. Centroids have pixel values of 255 and body pixels have values
+of 254. 
 
 Input:
     skeleton - MxN ndarray, grayscale skeleton image
@@ -409,28 +538,14 @@ Output:
 """
 def extract_soma_information(skeleton):
     bw = skeleton.copy()
-    bw[skeleton != 200] = 0     # Only get contours
+    bw[skeleton < 254] = 0  # Only get somas
     number, labels, stats, centroids = cv2.connectedComponentsWithStats(bw, connectivity=8)
-    
-    img_centroids = sp.vstack(sp.where(skeleton == 255)).T
     
     somas = []
     
     for i in sp.arange(1, number):
-        contour_ij = sp.vstack(sp.where(labels == i)).T
-        
-        # This FrameSoma isn't really complete. We are using the contour as
-        # its internal coordinates as well as its contour coordinates, but for
-        # the purposes of processing the skeleton that's all we need. 
-        soma = fs.FrameSoma(0, contour_ij, contour=contour_ij)
-        
-        # Manually set the soma centroid to the point marked in the image, 
-        # since we did not give the FrameSoma enough coordinates to calculate
-        # it accurately. 
-        # "centroids[i]" needs to be reversed because it's in terms of x,y 
-        # instead of row, col order. 
-        dist = sp.sqrt(sp.sum((img_centroids - centroids[i][::-1])**2, axis=1))
-        soma.centroid = img_centroids[sp.argmin(dist)]
+        soma_coords = sp.vstack(sp.where(labels == i)).T
+        soma = fs.FrameSoma(0, soma_coords)
         somas.append(soma)
         
     return somas
@@ -445,7 +560,8 @@ Input:
     centroid_indices - indices into X of the soma centroids
     
 Output:
-    trees - list of Tree objects
+    mainTrees - list of Tree objects that have somas assigned to them
+    orphans - list of Tree objects that do not have somas assigned to them
 """
 def create_undirected_trees(tree_csr, X, centroid_indices):
     N = sparse.coo_matrix(tree_csr)  # For easier indexing into the tree
@@ -454,7 +570,7 @@ def create_undirected_trees(tree_csr, X, centroid_indices):
     trees = []
 
     for c in range(n_components):
-        tree_obj = Tree()
+        tree_obj = UndirectedTree()
         label_ind = sp.where(labels == c)[0]
         
         for i in label_ind:
@@ -475,16 +591,20 @@ def create_undirected_trees(tree_csr, X, centroid_indices):
                 mst.setCenterNode(c) 
     
     # Now there should be one tree per soma
-    trees = [T for T in trees if T.centerNode is not None]
+    mainTrees = [T for T in trees if T.centerNode is not None]
+    orphans = [T for T in trees if T.centerNode is None]
     
-    return trees
+    return mainTrees, orphans
  
 
    
-def skeleton_to_tree(skeleton, somas=None):   
-    if somas is None:
-        somas = extract_soma_information(skeleton)
-    
+def skeleton_to_tree(skeleton, img, somas):
+    # Get rid of the soma bodies, leaving only the contour
+    for soma in somas:
+        skeleton[soma.rows(), soma.cols()] = 0
+        skeleton[soma.contourRows(), soma.contourCols()] = 254
+        skeleton[soma.centroid[0], soma.centroid[1]] = 255
+        
     coords = sp.where((skeleton > 1)) 
     
     # Here we are adding a 3rd coordinate representing the color of the pixel,
@@ -494,7 +614,7 @@ def skeleton_to_tree(skeleton, somas=None):
     # 1 = low color (low confidence), so that during distance calculations
     # the high colors look closer. 
     values = skeleton[coords[0], coords[1]]-skeleton[skeleton > 1].min()
-    values = 1-values / values.max()
+    values = 1 - values / values.max()
     X = sp.vstack((coords[0], coords[1], values)).T
     
     # Get a list of IDs that correspond to the soma centroids, for referencing
@@ -527,60 +647,116 @@ def skeleton_to_tree(skeleton, somas=None):
     
     # Get the minimum spanning tree of the whole image
     tree_csr = minimum_spanning_tree(G, overwrite=True)
+
+    #tree_csr = split_tree(tree_csr, X, img)
     
     # Break any connections that don't have adjacent pixels
-    tree_csr[tree_csr > 2] = 0
+    tree_csr[tree_csr > 50] = 0
     tree_csr.eliminate_zeros()
     
     # Break connections between somas
     tree_csr = split_somas(tree_csr, centroid_indices)
     
-    trees = create_undirected_trees(tree_csr, X, centroid_indices)
+    mainTrees, orphans = create_undirected_trees(tree_csr, X, centroid_indices)
     
-    #bw_orig = sp.zeros_like(skeleton)
-    #bw_pruned = sp.zeros_like(skeleton)
+    return mainTrees, orphans
+
+
+def match_orphans(orphans):
+    treeSeries = []
     
-    # Turn the trees into directed graphs and prune short branches
-    for T in trees:
-        T.makeDirected()
-        #tree.drawOnImage(bw_orig)
-        #print(tree.centerNode.printAsTree(0))
-        T.prune()
-        #tree.drawOnImage(bw_pruned)
-        #print(tree.centerNode.printAsTree(0))
+    for f, trees in orphans.items():
+        for orphan in trees:
+            matches = []
+            for t in treeSeries:
+                isMatch, overlap = t.isMatch(f, orphan)
+                if isMatch:
+                    matches.append((overlap, t))
+                    
+            if len(matches) == 0:
+                treeSeries.append(TreeSeries(f, orphan))
+                
+            elif len(matches) == 1:
+                matches[0][1].addTree(f, orphan)
+                
+            else:
+                matches.sort()
+                matches[-1][1].addTree(f, orphan)
+                
+    return treeSeries
+    
+
+def combine_orphan_trees(mainTrees, orphans):
+    treeSeries = match_orphans(orphans) # TODO we need to do this on the actual image, not the skeleton data
+    
+    for tree in treeSeries:
+        touching = []
         
-    #plt.imshow(bw_orig); plt.show()
-    #plt.imshow(bw_pruned); plt.show()
-    
-    return trees
+        for main in mainTrees:
+            (touches, dist) = tree.distanceTo(mainTrees[main])
+            if touches:
+                touching.append((dist, main))
+                
     
 
 """
 Main method for this file. Translates all skeleton images in a video into
 Tree objects, which are directed graphs centered around a soma centroid. 
 """
-def process_skeleton(skeleton_fname):
+def process_skeleton(skeleton_fname, img_fname, soma_fname, tree_fname):
     skel_tif = TIFF.open(skeleton_fname, mode='r')
+    img_tif  = TIFF.open(img_fname, mode='r')
+    
+    path = os.path.dirname(skeleton_fname)
+    soma_fname = path + "/" + soma_fname
+    tree_fname = path + "/" + tree_fname
+    
+    with open(soma_fname, 'rb') as f:
+        videoSomas = pickle.load(f)
 
     frame = 0
-    trees = {}
+    mainTrees = {}
+    orphanTrees = {}
     
-    for skel in skel_tif.iter_images(): 
-        trees[frame] = skeleton_to_tree(skel)
+    for skel, img in zip(skel_tif.iter_images(), img_tif.iter_images()): 
+        somas = []
+        for v in videoSomas:
+            if frame in v.frames: somas.append(v.frameSomas[frame])
+            
+        trees, orphans = skeleton_to_tree(skel, img, somas)
+        mainTrees[frame] = trees
+        orphanTrees[frame] = orphans
         frame += 1
         
     skel_tif.close()
+    img_tif.close()
     
-    return trees
+    #mainTrees = combine_orphan_trees(mainTrees, orphanTrees)
+    
+    directedTrees = {}
+    # Turn the trees into directed graphs and prune short branches
+    for frame in mainTrees:
+        directedTrees[frame] = []
+        for T in mainTrees[frame]:
+            dT = DirectedTree(T)
+            dT.prune()
+            directedTrees[frame].append(dT)
+    
+    with open(tree_fname, 'wb') as f:
+        pickle.dump(directedTrees, f)
+        
+    return directedTrees, orphanTrees
 
         
 
 if __name__=='__main__':
-    skeleton_fname = "/Users/jaclynbeck/Desktop/BaramLab/tst2.tif"
-    
+    skeleton_fname = "/Users/jaclynbeck/Desktop/BaramLab/videos/A_LPVN_T1_08202017/processed_skeleton_max_projection_deconvolved_iter5.tif"
+    img_fname = "/Users/jaclynbeck/Desktop/BaramLab/videos/A_LPVN_T1_08202017/processed_max_projection_deconvolved_5iter.tif"
+    soma_fname = "/Users/jaclynbeck/Desktop/BaramLab/videos/A_LPVN_T1_08202017/processed_somas.p"
+    tree_fname = "/Users/jaclynbeck/Desktop/BaramLab/videos/A_LPVN_T1_08202017/tree_output.p"
     start_time = timeit.default_timer()
     
-    trees = process_skeleton(skeleton_fname)
+    trees, orphans = process_skeleton(skeleton_fname, img_fname, soma_fname, tree_fname)
         
     elapsed = timeit.default_timer() - start_time
     print(elapsed)

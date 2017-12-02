@@ -7,10 +7,7 @@ Created on Mon Oct  2 13:12:56 2017
 """
 
 import scipy as sp
-import skimage.measure as skm
-from libtiff import TIFFfile
-import timeit
-import Utils
+from skimage import filters
 import cv2
 
 
@@ -35,6 +32,9 @@ class BoundingBox(object):
     
     def height(self):
         return self.row_max - self.row_min + 1
+    
+    def __repr__(self):
+        return str(self.asArray())
     
 """
 This class represents a soma in a single frame
@@ -134,6 +134,12 @@ class FrameSoma(object):
                                         contours[:,0]+self.bbox.col_min))
         
     
+    def __copy__(self):
+        newSoma = FrameSoma(self.frameNum, self.coordinates.copy(), 
+                            contour=self.contour.copy())
+        return newSoma
+    
+    
     """
     This is what will get printed out when using print(frame) 
     """
@@ -142,6 +148,136 @@ class FrameSoma(object):
             "Centroid: [" + str(int(self.centroid[0])) + ", " + \
                             str(int(self.centroid[1])) + "]\n" + \
             "Box:\t" + str(self.bbox)
+            
+        return s
+    
+
+"""
+This class represents a single soma across multiple frames in a video, i.e.
+a collection of FrameSomas that represent the same object
+"""
+class VideoSoma(object):
+    __slots__ = 'frameSomas', 'frames', 'coordinateSpread'
+    
+    def __init__(self, frameSoma):
+        self.frameSomas = {frameSoma.frameNum: frameSoma}
+        self.frames     = [frameSoma.frameNum]
+        self.coordinateSpread = set([tuple(C) for C in frameSoma.coordinates])
+    
+    def addSoma(self, frameSoma):
+        self.frameSomas[frameSoma.frameNum] = frameSoma
+        self.frames.append(frameSoma.frameNum)
+        spread = set([tuple(C) for C in frameSoma.coordinates])
+        self.coordinateSpread = set.union(spread, self.coordinateSpread)
+        
+    def somaAtFrame(self, frame):
+        if frame in self.frameSomas:
+            return self.frameSomas[frame]
+        
+        return None
+
+        
+    """ 
+    Tests to see if soma objects in different frames are actually the same.
+    Assumes that between frames, the microglia centroid does not shift more
+    than 20 pixels in any direction. 
+    """
+    def isMatch(self, frameSoma):
+        # If they're in the same frame they can't be the same soma
+        if frameSoma.frameNum in self.frames:
+            return (False, -1)
+        
+        # If they're centered on the same spot they are the same soma
+        dist = self.distanceTo(frameSoma)
+        if dist < 20:
+            return (True, dist)
+
+        return (False, -1)
+    
+    
+    def distanceTo(self, frameSoma):
+        lastFrame = sorted(self.frames)[-1]
+        lastSoma = self.frameSomas[lastFrame]
+    
+        diff = lastSoma.centroid - frameSoma.centroid
+        dist = sp.sqrt(diff[0]**2 + diff[1]**2)
+        
+        return dist
+    
+    
+    def overlaps(self, other):
+        intersect = set.intersection(self.coordinateSpread, other.coordinateSpread)
+        if len(intersect) == 0:
+            return []
+        
+        overlap_frames = []
+        for f in sorted(self.frames):
+            if f not in other.frames:
+                continue
+            
+            s1 = self.frameSomas[f]
+            s2 = other.frameSomas[f]
+            
+            coords1 = set([tuple(C) for C in s1.coordinates])
+            coords2 = set([tuple(C) for C in s2.coordinates])
+            
+            intersect = set.intersection(coords1, coords2)
+            if len(intersect) > 0:
+                overlap_frames.append(f)
+    
+        return overlap_frames
+    
+    
+    def mergeWith(self, other):
+        #self.coordinateSpread = set()
+        
+        for f in set.union(set(self.frames), set(other.frames)):
+            # Only this soma appears in this frame. No action needs to be taken
+            if f not in other.frames:
+                pass
+                #s1 = self.frameSomas[f]
+                #self.addSoma(s1)
+            
+            # Only the other's soma appears in this frame. Use that one
+            elif f not in self.frames:
+                s2 = other.frameSomas[f]
+                self.addSoma(s2)
+
+            # Both somas appear and need to have their coordinates merged
+            else:
+                s1 = self.frameSomas[f]
+                s2 = other.frameSomas[f]
+                
+                coords1 = set([tuple(C) for C in s1.coordinates])
+                coords2 = set([tuple(C) for C in s2.coordinates])
+                
+                new_coords = sp.array(list(set.union(coords1, coords2)))
+                new_soma = FrameSoma(f, new_coords)
+    
+                #self.addSoma(new_soma)
+                self.frameSomas[f] = new_soma
+                del s1, s2
+        
+        # Correct the frames list, which will now have duplicates due to the 
+        # "addSoma" function
+        #self.frames = list(set(self.frames))
+    
+    
+    def nearestFrame(self, frame):
+        if frame in self.frames:
+            return self.frameSomas[frame]
+        
+        dist = abs(sp.array(self.frames) - frame)
+        index = sp.argsort(dist)
+        
+        return self.frameSomas[self.frames[index[0]]]
+   
+    def __lt__(self, other):
+        return len(self.frames) < len(other.frames)
+    
+    def __repr__(self):
+        s = "Frames: " + str(sorted(self.frameSomas.keys())) + "\n" + \
+            "Centroid: " + str(self.frameSomas[self.frames[0]].centroid) + "\n"
             
         return s
 
@@ -244,30 +380,37 @@ Output:
 """
 def label_objects(bw, frame):
     # Find all interconnected pixel regions
-    labels = skm.label(bw, background=False, connectivity=1)
-    props = skm.regionprops(labels)
-    counts, edges = sp.histogram(labels, labels.max()+1)
+    number, labels, stats, centroids = cv2.connectedComponentsWithStats(bw, connectivity=4)
+    
+    valid = sp.where(stats[:,4] >= FrameSoma.MIN_SOMA_SIZE)[0]
+    
+    #labels = skm.label(bw, background=False, connectivity=1)
+    #props = skm.regionprops(labels)
+    #counts, edges = sp.histogram(labels, labels.max()+1)
     
     somas = []
     
     # Find all the labelled regions with a large enough number of pixels
-    valid = sp.where(counts > FrameSoma.MIN_SOMA_SIZE)
+    #valid = sp.where(counts > FrameSoma.MIN_SOMA_SIZE)
     
     # Create a soma object for each object that is larger than the minimum size
-    for v in valid[0]:
+    for v in valid:
         if v == 0: # Ignore the 'background' label, which will always be 0
             continue
 
-        bbox = props[v-1].bbox
+        coords = sp.vstack(sp.where(labels == v)).T
+        bbox = (min(coords[:,0]), min(coords[:,1]), \
+                max(coords[:,0]), max(coords[:,1]))
+        #bbox = props[v-1].bbox
         
         # Ignore all somas within 10 px of the edges
-        if (min(bbox) <= 10) or (max(bbox) >= bw.shape[0]-10):
-            continue
+        #if (min(bbox) <= 10) or (max(bbox) >= bw.shape[0]-10):
+        #    continue
         
         bbox_obj = BoundingBox(bbox[0], bbox[1], bbox[2], bbox[3])
         
         # Create the soma object and add it to the list
-        somas.append(FrameSoma(frame, props[v-1].coords, bbox_obj))
+        somas.append(FrameSoma(frame, coords, bbox_obj))
     
     return somas
 
@@ -307,9 +450,9 @@ def get_contour(img):
 """
 Finds all the somas in a single max projection image. 
 
-The image is thresholded by finding the top 1% of pixels and using those
-pixels as potential somas. Interconnected pixels are labelled as objects, and 
-those of adequate size are returned as valid somas. 
+The image is thresholded by using pixels above the Otsu threshold. 
+Interconnected pixels are labelled as objects, and those of adequate size are 
+returned as valid somas. 
 
 Input:
     img - (MxN ndarray) The image to search
@@ -320,17 +463,73 @@ Output:
                              labelled as soma pixels
         somas - (list) List of FrameSoma objects 
 """
-def find_somas_single_image(img):
-    threshold = sp.percentile(img, 99)
-    
-    bw = sp.zeros_like(img, dtype='uint8')
+def find_somas_single_image(img, frame):
+    threshold = filters.threshold_otsu(img) 
+    bw = sp.zeros_like(img, dtype='uint8')  
     bw[img > threshold] = 255
     
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(3,3))
     bw = cv2.morphologyEx(bw, cv2.MORPH_DILATE, kernel)
 
-    somas = label_objects(bw, 0)
+    somas = label_objects(bw, frame)
     return [threshold, somas]
+
+
+def combine_somas(videoSomas, frameSomas):
+    for f in frameSomas:
+        matches = []
+        for v in videoSomas:
+            isMatch, dist = v.isMatch(f)
+            if isMatch:
+                matches.append((dist, v))
+                
+        if len(matches) == 0:
+            videoSomas.append(VideoSoma(f))
+            
+        elif len(matches) == 1:
+            matches[0][1].addSoma(f)
+            
+        else:
+            matches.sort()
+            matches[0][1].addSoma(f)
+            
+    return videoSomas
+
+
+def interpolate_somas(videoSomas, threshold_images):
+    for v in videoSomas:
+        toAdd = []
+        for frame in range(len(threshold_images)):
+            if frame not in v.frames:
+                frameSoma = v.nearestFrame(frame)
+                bw = threshold_images[frame]
+                
+                ind = sp.where(bw[frameSoma.rows(), frameSoma.cols()] > 0)[0]
+                coords = sp.vstack((frameSoma.rows()[ind], frameSoma.cols()[ind])).T
+                
+                if len(coords) > 10: # Filter out noise
+                    newSoma = FrameSoma(frame, coords)
+                    toAdd.append(newSoma)
+        
+        for soma in toAdd:
+            v.addSoma(soma)
+        
+    toRemove = []
+    for i in range(len(videoSomas)):
+        v1 = videoSomas[i]
+        for j in sp.arange(i+1, len(videoSomas)):
+            v2 = videoSomas[j]
+            
+            overlap_frames = v1.overlaps(v2)
+            if len(overlap_frames) > 0:
+                v2.mergeWith(v1)
+                toRemove.append(v1)
+                break
+        
+    for v in toRemove:
+        videoSomas.remove(v)
+        
+    return videoSomas
     
 
 """
@@ -370,30 +569,4 @@ def find_somas_3D(images):
     somas_final = match_somas(somas)        
     return [threshold, somas_final]
     
-
-
-"""
-Main method for debugging.
-"""
-if __name__ == '__main__':
-    img_fname = '/Users/jaclynbeck/Desktop/BaramLab/C2-8-29-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_.i...CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_GREEN_t1.tif' #'/Users/jaclynbeck/Desktop/BaramLab/C2-8-29-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_.i...CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_GREEN_DENOISED_t1.tif'
-    output_img = '/Users/jaclynbeck/Desktop/BaramLab/somas.tif'
-    
-    tiff = TIFFfile(img_fname)
-    samples, sample_names = tiff.get_samples()
-
-    start_time = timeit.default_timer()
-    
-    for i in range(samples[0].shape[0]):
-        samples[0][i] = Utils.preprocess_img(samples[0][i])
-    
-    #[threshold, somas] = find_somas_single_image(samples[0])
-    [threshold, somas] = find_somas_3D(samples[0])
-    
-    elapsed = timeit.default_timer() - start_time
-    print(elapsed)
-    
-    # For debugging and display
-    s_img = Utils.plot_somas(somas, display=True)
-    sp.misc.imsave(output_img, s_img)
     
