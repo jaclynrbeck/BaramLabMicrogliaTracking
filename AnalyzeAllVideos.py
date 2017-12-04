@@ -16,6 +16,7 @@ import TraceProcesses2D as tp
 import ProcessSkeleton as ps
 import AnalyzeVideo as av
 import os
+import sys
 import timeit
 
 
@@ -106,7 +107,7 @@ class VideoData(object):
             "Deconvolutions: " + str(self.deconvolutions) + "\n" + \
             "Deconvolve: " + self.deconvolve + "\n" + \
             "Skeletonize: " + self.skeletonize + "\n" + \
-            "Analyize: " + self.analyze + "\n"
+            "Analyze: " + self.analyze + "\n"
             
         return s
     
@@ -185,23 +186,27 @@ def call_skeletonize(v):
     
     dc_output = path + "/" + v.dc_output
     
-    # If the deconvolved file doesn't exist, deconvolve the .ims file first
-    if not os.path.exists(dc_output):
-        success = call_deconvolve(v)
-    
-    start_time = timeit.default_timer()
-    
-    # Skeletonize
-    if success:
-        tp.trace_all_images(dc_output, v.skeleton_output, v.soma_output,
-                            v.threshold)
-        # Check if the skeleton file is there
-        success = os.path.isfile(path + "/" + v.skeleton_output)
+    try:
+        # If the deconvolved file doesn't exist, deconvolve the .ims file first
+        if not os.path.exists(dc_output):
+            success = call_deconvolve(v)
         
-    if success:
-        skeleton_output = path + "/" + v.skeleton_output
-        ps.process_skeleton(skeleton_output, dc_output, v.soma_output, 
-                            v.tree_output)
+        start_time = timeit.default_timer()
+        
+        # Skeletonize
+        if success:
+            tp.trace_all_images(dc_output, v.skeleton_output, v.soma_output,
+                                v.threshold)
+            # Check if the skeleton file is there
+            success = os.path.isfile(path + "/" + v.skeleton_output)
+            
+        if success:
+            skeleton_output = path + "/" + v.skeleton_output
+            ps.process_skeleton(skeleton_output, dc_output, v.soma_output, 
+                                v.tree_output)
+    except: 
+        success = False
+        print(sys.exc_info())
     
     elapsed = timeit.default_timer() - start_time
     print("Skeletonize: " + str(elapsed))
@@ -222,7 +227,7 @@ Output:
     True if successful, False if not
 """
 def call_analyze(v):
-    pass
+    return True
     
 
 """
@@ -248,13 +253,15 @@ if __name__ == '__main__':
     odds = video_data[1::2]
     evens = video_data[0::2]
     
-    video_data = evens
+    video_data = odds
     ### Optional
     
     failures = []
     
     # For each VideoData object
     for v in video_data:
+        print("\nProcessing " + v.ims_file)
+        
         # Deconvolve it
         if v.deconvolve == "true":
             success = call_deconvolve(v)
@@ -278,7 +285,7 @@ if __name__ == '__main__':
     
     # Print any failures
     if len(failures) > 0:
-        print("Failed files: \n")
+        print("\nFailed files: \n")
         for f in failures:
             print("\t" + f.ims_file + "\n")
     

@@ -122,7 +122,8 @@ Output:
     warp_matrix - (2x3 ndarray), The affine transformation matrix
 """
 def register_affine(img1, img2):
-    (cc, warp_matrix) = cv2.findTransformECC(img2, img1, None, cv2.MOTION_AFFINE)
+    (cc, warp_matrix) = cv2.findTransformECC(img2, img1, None, 
+                                             cv2.MOTION_AFFINE)
     return warp_matrix
 
 
@@ -148,7 +149,7 @@ Input:
     
 Output:
     (no output), however several files are created through this process:
-        skeletonized image stack
+        deconvolved image stack
         metadata pickle file holding the image metadata
 """
 def deconvolve_images_2D(img_fname, output_fname, psf_fname, metadata_fname, 
@@ -208,8 +209,9 @@ def deconvolve_images_2D(img_fname, output_fname, psf_fname, metadata_fname,
             
             # Deconvolve and set to the range of a uint16, but keep it as a
             # float for now
-            deconvolved = restoration.richardson_lucy(img, psf, iterations=deconvolution_iters)
-            deconvolved = (deconvolved*65535).astype('float32')
+            deconvolved = restoration.richardson_lucy(img, psf, 
+                                                iterations=deconvolution_iters)
+            deconvolved = deconvolved.astype('float32')
             
             # Register the image with the previous image, but we use the 
             # original (non-deconvolved) images to find the registration matrix
@@ -242,7 +244,7 @@ def deconvolve_images_2D(img_fname, output_fname, psf_fname, metadata_fname,
             
             # Average all images in the window. (If not averaging, this step
             # does nothing.)
-            averaged = sum(window/window_size)
+            averaged = sum(window) / window_size
             
             # Re-adjust the range of the pixels to the range of a uint16
             averaged = averaged * (65535.0 / averaged.max())
@@ -272,10 +274,10 @@ Preferably the deconvolve function should be used with "AnalyzeAllVideos"
 instead for a little more error checking of file names/paths. 
 """
 if __name__=='__main__':
-    img_fname    = '/Volumes/Baram Lab/2-photon Imaging/2-01-17_PVN CX3CR1-GFP+CRH-tdTomato P8 CES/2-01-17_PVN CX3CR1-GFP+CRH-tdTomato P8 CES_Male 3 R PVN T1_b_4D_Male 3 R PVN T1.ims' 
-    output_fname = 'preprocessed_max_projection_10iter2.tif'
-    metadata_fname = 'img_metadata2.p'
-    psf_fname    = '/Volumes/Baram Lab/2-photon Imaging/PSF_GL_squared_890nm_single.png'
+    img_fname    = '/Volumes/Baram Lab/2-photon Imaging/7-30-17_CRH-tdTomato+CX3CR1-GFP P8 PVN Ctrl/7-30-17_CRH-tdTomato+CX3CR1-GFP P8 PVN Ctrl_Male 1 R PVN T1_b_4D.ims' 
+    output_fname = 'preprocessed_max_projection_10iter.tif'
+    metadata_fname = 'img_metadata.p'
+    psf_fname    = '/Volumes/Baram Lab/2-photon Imaging/PSF_GL_squared_920nm_single.png'
     start_time = timeit.default_timer()
 
     deconvolve_images_2D(img_fname, output_fname, psf_fname, metadata_fname, 1, 10)

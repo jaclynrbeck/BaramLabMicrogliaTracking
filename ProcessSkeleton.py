@@ -277,37 +277,41 @@ class DirectedTree(object):
     Follows the given node's path through the tree by tracing through each
     child. 
     
-    This is a recursive function. 
+    This uses a stack for depth first search of the tree. 
     
     Input:
         node - DirectedNode being inspected
     """
     def trace(self, uTree, node):
-        self.nodes.append(node)
-        connections = uTree.nodes[node.value]
+        stack = [self.centerNode]
         
-        # If this node has only one connection, and that connection is this
-        # node's parent, this node is a leaf. Stop recursion. 
-        if (len(connections) == 1) and (node.parent is not None) \
-            and (node.parent.value == connections[0]):
-                self.leaves.append(node)
-                return
-        
-        # Otherwise for each connection that isn't this node's parent, trace
-        # that connection recursively. 
-        for c in connections:
-            if node.parent is not None and node.parent.value == c:
-                continue
+        while len(stack) > 0:
+            node = stack.pop()
+            self.nodes.append(node)
+            connections = uTree.nodes[node.value]
             
-            c_node = DirectedNode(c, uTree.coordinates[c])
-            c_node.addParent(node)
-            node.children.append(c_node)
-            self.trace(uTree, c_node)
+            # If this node has only one connection, and that connection is this
+            # node's parent, this node is a leaf. 
+            if (len(connections) == 1) and (node.parent is not None) \
+                and (node.parent.value == connections[0]):
+                    self.leaves.append(node)
+                    continue
+            
+            # Otherwise for each connection that isn't this node's parent, add
+            # it to the stack for processing
+            for c in connections:
+                if node.parent is not None and node.parent.value == c:
+                    continue
+                
+                c_node = DirectedNode(c, uTree.coordinates[c])
+                c_node.addParent(node)
+                node.children.append(c_node)
+                stack.append(c_node)
 
     
     """
-    Removes short branches (< 10 nodes long) from the tree, which are likely to
-    be noise or artifacts from skeletonization. 
+    Removes short branches (< 10 pixels long) from the tree, which are likely 
+    to be noise or artifacts from skeletonization. 
     """
     def prune(self):
         # We can't delete nodes from a list we are iterating through, so this
@@ -602,6 +606,9 @@ def skeleton_to_tree(skeleton, img, somas):
     # Get rid of the soma bodies, leaving only the contour
     for soma in somas:
         skeleton[soma.rows(), soma.cols()] = 0
+    
+    # Second loop needed in case weird soma overlap issues happen    
+    for soma in somas:
         skeleton[soma.contourRows(), soma.contourCols()] = 254
         skeleton[soma.centroid[0], soma.centroid[1]] = 255
         
@@ -750,10 +757,10 @@ def process_skeleton(skeleton_fname, img_fname, soma_fname, tree_fname):
         
 
 if __name__=='__main__':
-    skeleton_fname = "/Users/jaclynbeck/Desktop/BaramLab/videos/A_LPVN_T1_08202017/processed_skeleton_max_projection_deconvolved_iter5.tif"
-    img_fname = "/Users/jaclynbeck/Desktop/BaramLab/videos/A_LPVN_T1_08202017/processed_max_projection_deconvolved_5iter.tif"
-    soma_fname = "/Users/jaclynbeck/Desktop/BaramLab/videos/A_LPVN_T1_08202017/processed_somas.p"
-    tree_fname = "/Users/jaclynbeck/Desktop/BaramLab/videos/A_LPVN_T1_08202017/tree_output.p"
+    skeleton_fname = "/Volumes/Baram Lab/2-photon Imaging/10-05-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CTL/video_processing/10-05-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CTL_Female 1 L PVN T2_b_4D_Female 1 L PVN T2/skeleton.tif"
+    img_fname = "/Volumes/Baram Lab/2-photon Imaging/10-05-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CTL/video_processing/10-05-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CTL_Female 1 L PVN T2_b_4D_Female 1 L PVN T2/preprocessed_max_projection_10iter.tif"
+    soma_fname = "somas.p"
+    tree_fname = "processed_trees.p"
     start_time = timeit.default_timer()
     
     trees, orphans = process_skeleton(skeleton_fname, img_fname, soma_fname, tree_fname)
