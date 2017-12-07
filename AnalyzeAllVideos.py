@@ -37,11 +37,13 @@ The csv file must have the following fields, in order, separated by commas:
                          - File must end in .tif
     soma_output:     local file name to save the soma information. 
                          - File must end in .p
-    tree_output:     local file name to save the tree information. 
+    microglia_output: local file name to save the microglia information. 
                          - File must end in .p
     deconvolve:      True or False, whether to deconvolve the .ims file
     skeletonize:     True or False, whether to skeletonize the deconvolved 
                      image
+    process_skeleton: True or False, whether to turn the skeleton into tree
+                     information and collect stats on microglia
     analyze:         True or False, whether to gather stats about the 
                      skeletonized data
     threshold:       integer, usually 10 to 15. Use the top X% of pixel values 
@@ -56,9 +58,9 @@ The csv file must have the following fields, in order, separated by commas:
 """
 class VideoData(object):
     __slots__ = 'psf_file', 'ims_file', 'metadata_file', 'dc_output', \
-                'skeleton_output', 'soma_output', 'tree_output', \
-                'deconvolve', 'skeletonize', 'analyze', 'threshold', \
-                'deconvolutions'
+                'skeleton_output', 'soma_output', 'microglia_output', \
+                'deconvolve', 'skeletonize', 'process_skeleton', 'analyze', \
+                'threshold', 'deconvolutions'
     
     """
     Initialization. 
@@ -67,26 +69,27 @@ class VideoData(object):
         csv_line - string. a single line from the csv file.
     """            
     def __init__(self, csv_line):
-        if len(csv_line) >= 12:
+        if len(csv_line) >= 13:
             self.psf_file        = csv_line[0]
             self.ims_file        = csv_line[1]
             self.metadata_file   = csv_line[2]
             self.dc_output       = csv_line[3]
             self.skeleton_output = csv_line[4]
             self.soma_output     = csv_line[5]
-            self.tree_output     = csv_line[6]
+            self.microglia_output = csv_line[6]
             self.deconvolve      = csv_line[7].lower().strip()
             self.skeletonize     = csv_line[8].lower().strip()
-            self.analyze         = csv_line[9].lower().strip()
+            self.process_skeleton = csv_line[9].lower().strip()
+            self.analyze         = csv_line[10].lower().strip()
             
             if len(csv_line[10]) > 0:
-                self.threshold   = 100-int(csv_line[10])
+                self.threshold   = 100-int(csv_line[11])
             else:
                 self.threshold   = 100
                 self.skeletonize = "false"
                 
             if len(csv_line[11]) > 0:
-                self.deconvolutions = int(csv_line[11])
+                self.deconvolutions = int(csv_line[12])
             else:
                 self.deconvolutions = 0
                 self.deconvolve = "false"
@@ -102,11 +105,12 @@ class VideoData(object):
             "Deconvolved File: " + self.dc_output + "\n" + \
             "Skeleton File: " + self.skeleton_output + "\n" + \
             "Soma File: " + self.soma_output + "\n" + \
-            "Tree File: " + self.tree_output + "\n" + \
+            "Tree File: " + self.microglia_output + "\n" + \
             "Skeleton Threshold: " + str(self.threshold) + "\n" + \
             "Deconvolutions: " + str(self.deconvolutions) + "\n" + \
             "Deconvolve: " + self.deconvolve + "\n" + \
             "Skeletonize: " + self.skeletonize + "\n" + \
+            "Process Skeleton: " + self.process_skeleton + "\n" + \
             "Analyze: " + self.analyze + "\n"
             
         return s
@@ -197,13 +201,7 @@ def call_skeletonize(v):
         if success:
             tp.trace_all_images(dc_output, v.skeleton_output, v.soma_output,
                                 v.threshold)
-            # Check if the skeleton file is there
-            success = os.path.isfile(path + "/" + v.skeleton_output)
             
-        if success:
-            skeleton_output = path + "/" + v.skeleton_output
-            ps.process_skeleton(skeleton_output, dc_output, v.soma_output, 
-                                v.tree_output)
     except: 
         success = False
         print(sys.exc_info())
@@ -211,8 +209,38 @@ def call_skeletonize(v):
     elapsed = timeit.default_timer() - start_time
     print("Skeletonize: " + str(elapsed))
     
-    # Check if the tree file is there
-    return os.path.isfile(path + "/" + v.tree_output)
+    # Check if the skeleton file is there
+    return os.path.isfile(path + "/" + v.skeleton_output)
+
+
+def call_process_skeleton(v):
+    success = True
+    
+    path = os.path.dirname(v.ims_file)
+    path += "/video_processing/" + os.path.basename(v.ims_file)[0:-4] 
+    
+    dc_output = path + "/" + v.dc_output
+    skeleton_output = path + "/" + v.skeleton_output
+    
+    try:
+        # If the deconvolved file doesn't exist, deconvolve the .ims file first
+        if not os.path.exists(skeleton_output):
+            success = call_skeletonize(v)
+        
+        start_time = timeit.default_timer()
+        
+        if success:
+            ps.process_skeleton(skeleton_output, dc_output, v.metadata_file,
+                                v.soma_output, v.microglia_output)
+    except: 
+        success = False
+        print(sys.exc_info())
+    
+    elapsed = timeit.default_timer() - start_time
+    print("Process Skeleton: " + str(elapsed))
+    
+    # Check if the microglia file is there
+    return os.path.isfile(path + "/" + v.microglia_output)
 
 
 """
@@ -272,6 +300,13 @@ if __name__ == '__main__':
         # Skeletonize it
         if v.skeletonize == "true":
             success = call_skeletonize(v)
+            if not success:
+                failures.append(v)
+                continue
+            
+        # Process the skeleton
+        if v.process_skeleton == "true":
+            success = call_process_skeleton(v)
             if not success:
                 failures.append(v)
                 continue

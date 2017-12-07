@@ -142,7 +142,7 @@ def trace_all_images(img_fname, output_fname, soma_fname, threshold=THRESHOLD):
         threshold_images.append(thresh_img)
         
         # Find the somas for this image and add them to the list
-        [soma_threshold, frame_somas] = fs.find_somas_single_image(img, frame)
+        frame_somas = fs.find_somas_single_image(img, frame, threshold)
         videoSomas = fs.combine_somas(videoSomas, frame_somas)
         
         frame += 1
@@ -160,7 +160,10 @@ def trace_all_images(img_fname, output_fname, soma_fname, threshold=THRESHOLD):
             frameSoma = soma.somaAtFrame(frame)
 
             if frameSoma is not None:
-                skeleton[frameSoma.rows(), frameSoma.cols()] = 254
+                skeleton[frameSoma.rows(), frameSoma.cols()] = 0
+                rows = frameSoma.contourRows()
+                cols = frameSoma.contourCols()
+                skeleton[rows, cols] = 254
                 skeleton[frameSoma.centroid[0], frameSoma.centroid[1]] = 255
             
         out_tif.write_image(skeleton)
@@ -180,13 +183,13 @@ Preferably the skeletonize function should be used with "AnalyzeAllVideos"
 instead for a little more error checking of file names/paths. 
 """
 if __name__ == '__main__':
-    img_fname  = '/Volumes/Baram Lab/2-photon Imaging/2-01-17_PVN CX3CR1-GFP+CRH-tdTomato P8 CES/video_processing/2-01-17_PVN CX3CR1-GFP+CRH-tdTomato P8 CES_Male 3 R PVN T1_b_4D_Male 3 R PVN T1/preprocessed_max_projection_10iter2.tif' 
+    img_fname  = '/Volumes/Baram Lab/2-photon Imaging/7-30-17_CRH-tdTomato+CX3CR1-GFP P8 PVN Ctrl/video_processing/7-30-17_CRH-tdTomato+CX3CR1-GFP P8 PVN Ctrl_Male 1 R PVN T1_b_4D/preprocessed_max_projection_10iter.tif' 
     output_fname = 'skeleton.tif'
     soma_fname = 'somas.p'
 
     start_time = timeit.default_timer()
     
-    trace_all_images(img_fname, output_fname, soma_fname, 89)
+    trace_all_images(img_fname, output_fname, soma_fname, 85)
         
     elapsed = timeit.default_timer() - start_time
     print(elapsed)

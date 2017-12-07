@@ -17,81 +17,8 @@ import javabridge # required by bioformats
 import bioformats # installed with pip install python-bioformats
 from skimage import restoration
 import os
-import datetime
 import pickle
-
-
-"""
-This class stores metadata from the image in a more human-readable format.
-Metadata comes from the OME XML data in the .ims file. This is intended for
-use with max projection images only and is not for z-stacks. 
-
-Data stored in this class:
-    sizeX:      Width of the images in pixels
-    sizeY:      Height of the images in pixels
-    numImages:  Number of frames in the stack
-    physX:      Physical width of each pixel in microns
-    physY:      Physical height of each pixel in microns
-    imgTimes:   List of datetime timestamps corresponding to each frame
-    timeDeltas: List of differences in time between frames. timeDeltas[0] is
-                the difference between frame 0 and 1, timeDeltas[1] is between
-                frame 1 and 2, etc. 
-"""
-class ImageMetadata(object):
-    __slots__ = 'sizeX', 'sizeY', 'numImages', 'physX', 'physY', \
-                'imgTimes', 'timeDeltas'
-    
-    """
-    Initialization. The bioformats library uses the schema from 2013 but the
-    .ims files use the schema from 2016 so there are several fixes in this 
-    function to account for the difference. 
-    
-    Input: 
-        ome_xml: a bioformats.OMEXML object created from the .ims file metadata
-    """           
-    def __init__(self, ome_xml):
-        # This is kind of dirty but it fixes an issue getting annotations since
-        # this library is behind by a few years.
-        bioformats.omexml.NS_ORIGINAL_METADATA = \
-                            "http://www.openmicroscopy.org/Schemas/OME/2016-06"
-        ome_xml.ns['sa'] = ome_xml.ns['ome'] 
-    
-        # Extract the basic pixel information
-        self.sizeX = ome_xml.image().Pixels.SizeX
-        self.sizeY = ome_xml.image().Pixels.SizeY
-        self.numImages = ome_xml.image().Pixels.SizeT
-        self.physX = ome_xml.image().Pixels.PhysicalSizeX
-        self.physY = ome_xml.image().Pixels.PhysicalSizeY
-        
-        # Use the annotations to get the time stamps / time deltas
-        annotations = ome_xml.structured_annotations
-        annotations.ns['sa'] = annotations.ns['ome'] # Same issue fix
-    
-        self.timeDeltas = []
-        self.imgTimes = {}
-        last_dt = None
-        for i in range(self.numImages):
-            # There are fields called "TimePoint<#>", i.e. "TimePoint10" for 
-            # frame 10. Get those fields. 
-            tp = "TimePoint"+str(i)
-            if annotations.has_original_metadata(tp):
-                time = annotations.get_original_metadata_value(tp)
-                
-                # Turn the text into a datetime object. It does not properly
-                # ingest microseconds so there is an extra step to add the
-                # microseconds to the datetime object. 
-                dt = datetime.datetime.strptime(time[:-4], '%Y-%m-%d %H:%M:%S')
-                dt = dt.replace(microsecond=int(time[-3:])*1000)
-                self.imgTimes[i] = dt
-                
-                # Calculate the time delta between this frame and the last one
-                if last_dt is not None:
-                    diff = dt - last_dt
-                    self.timeDeltas.append(diff.total_seconds())
-                
-                last_dt = dt
-            else:
-                last_dt = None
+from Objects import ImageMetadata
 
 
 """
@@ -169,7 +96,7 @@ def deconvolve_images_2D(img_fname, output_fname, psf_fname, metadata_fname,
     javabridge.start_vm(class_path=bioformats.JARS)
     
     # Open the output file and the PSF file
-    averaged_tif = TIFF.open(output_fname, mode='w')
+    #averaged_tif = TIFF.open(output_fname, mode='w')
     psf = cv2.imread(psf_fname, cv2.IMREAD_GRAYSCALE)
     psf = psf / sp.sum(psf) # Normalize so the sum of all pixels is 1
 
@@ -196,7 +123,7 @@ def deconvolve_images_2D(img_fname, output_fname, psf_fname, metadata_fname,
     img0 = None
     
     numImages = meta.numImages
-    
+    """
     # Read each image, deconvolve it, and register it with the previous image
     with bioformats.ImageReader(img_fname) as reader:
         for t in range(numImages):
@@ -257,14 +184,14 @@ def deconvolve_images_2D(img_fname, output_fname, psf_fname, metadata_fname,
         reader.close()
 
     averaged_tif.close()
-    
+    """
     # Pickle the image metadata to a file for later use
     with open(metadata_fname, 'wb') as f:
         pickle.dump(meta, f)
     
     # Technically this should be uncommented but it interferes with the ability
     # to run multiple calls of this deconvolve function in a row so it is
-    #commented out. 
+    # commented out. 
     #javabridge.kill_vm() 
 
 
