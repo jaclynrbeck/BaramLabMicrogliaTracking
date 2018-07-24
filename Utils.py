@@ -10,7 +10,6 @@ import cv2
 import scipy as sp
 import matplotlib.pyplot as plt
 from scipy import sparse
-#from AmbrosioTortorelliMinimizer import *
 
 
 """

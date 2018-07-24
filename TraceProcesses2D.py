@@ -183,7 +183,7 @@ Preferably the skeletonize function should be used with "AnalyzeAllVideos"
 instead for a little more error checking of file names/paths. 
 """
 if __name__ == '__main__':
-    img_fname  = '/Volumes/Baram Lab/2-photon Imaging/7-30-17_CRH-tdTomato+CX3CR1-GFP P8 PVN Ctrl/video_processing/7-30-17_CRH-tdTomato+CX3CR1-GFP P8 PVN Ctrl_Male 1 R PVN T1_b_4D/preprocessed_max_projection_10iter.tif' 
+    img_fname  = '/Users/jaclynbeck/Desktop/BaramLab/videos/A_LPVN_T1_08202017/video_processing/8-20-17_crh-tdtomato+cx3cr1-gfp p8 pvn ces_male 1 l pvn t1_b_4d/preprocessed_max_projection_10iter.tif' 
     output_fname = 'skeleton.tif'
     soma_fname = 'somas.p'
 

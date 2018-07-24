@@ -14,10 +14,11 @@ Created on Thu Nov 30 14:06:41 2017
 import DeconvolveImages2D as dc
 import TraceProcesses2D as tp
 import ProcessSkeleton as ps
-import AnalyzeVideo as av
+import AnalyzeData as ad
 import os
 import sys
 import timeit
+import csv
 
 
 """
@@ -46,6 +47,9 @@ The csv file must have the following fields, in order, separated by commas:
                      information and collect stats on microglia
     analyze:         True or False, whether to gather stats about the 
                      skeletonized data
+    postprocess:     True or False, whether to create some additional CSVs with
+                     only a subset of the microglia data 
+                          - (see included_microglia)
     threshold:       integer, usually 10 to 15. Use the top X% of pixel values 
                      for skeletonization. 
                          - If this is left blank, the image will not be 
@@ -54,13 +58,16 @@ The csv file must have the following fields, in order, separated by commas:
                      the .ims file. Try 10 first, then 20 if 10 is too noisy. 
                          - If this is left blank, the image will not be 
                            deconvolved even if deconvolved == True
+    included_microglia: a comma-separated list of microglia ID's that should be
+                        included in post-processing
     
 """
 class VideoData(object):
     __slots__ = 'psf_file', 'ims_file', 'metadata_file', 'dc_output', \
                 'skeleton_output', 'soma_output', 'microglia_output', \
                 'deconvolve', 'skeletonize', 'process_skeleton', 'analyze', \
-                'threshold', 'deconvolutions'
+                'postprocess', 'threshold', 'deconvolutions', \
+                'included_microglia'
     
     """
     Initialization. 
@@ -68,31 +75,35 @@ class VideoData(object):
     Input: 
         csv_line - string. a single line from the csv file.
     """            
-    def __init__(self, csv_line):
-        if len(csv_line) >= 13:
-            self.psf_file        = csv_line[0]
-            self.ims_file        = csv_line[1]
-            self.metadata_file   = csv_line[2]
-            self.dc_output       = csv_line[3]
-            self.skeleton_output = csv_line[4]
-            self.soma_output     = csv_line[5]
-            self.microglia_output = csv_line[6]
-            self.deconvolve      = csv_line[7].lower().strip()
-            self.skeletonize     = csv_line[8].lower().strip()
-            self.process_skeleton = csv_line[9].lower().strip()
-            self.analyze         = csv_line[10].lower().strip()
+    def __init__(self, csv_dict):
+        if len(csv_dict) >= 11:
+            self.psf_file        = csv_dict['PSF']
+            self.ims_file        = csv_dict['IMS']
+            self.metadata_file   = csv_dict['Metadata']
+            self.dc_output       = csv_dict['Deconvolved Output']
+            self.skeleton_output = csv_dict['Skeleton Output']
+            self.soma_output     = csv_dict['Soma Output']
+            self.microglia_output = csv_dict['Microglia Output']
+            self.deconvolve      = csv_dict['Deconvolve'].lower().strip()
+            self.skeletonize     = csv_dict['Skeletonize'].lower().strip()
+            self.process_skeleton = csv_dict['Process Skeleton'].lower().strip()
+            self.analyze         = csv_dict['Analyze'].lower().strip()
+            self.postprocess     = csv_dict['Postprocess'].lower().strip()
             
-            if len(csv_line[10]) > 0:
-                self.threshold   = 100-int(csv_line[11])
+            if len(csv_dict['Skeleton Threshold']) > 0:
+                self.threshold   = 100-int(csv_dict['Skeleton Threshold'])
             else:
                 self.threshold   = 100
                 self.skeletonize = "false"
                 
-            if len(csv_line[11]) > 0:
-                self.deconvolutions = int(csv_line[12])
+            if len(csv_dict['Deconvolutions']) > 0:
+                self.deconvolutions = int(csv_dict['Deconvolutions'])
             else:
                 self.deconvolutions = 0
                 self.deconvolve = "false"
+            
+            if len(csv_dict['Included Microglia']) > 0:
+                self.included_microglia = [int(s) for s in csv_dict['Included Microglia'].split(',')]
             
     
     """
@@ -128,15 +139,11 @@ Output:
 """
 def read_csv(csv_file):
     csv_data = []
-    csv = open(csv_file, 'r')
-    csv.readline() # Get rid of header line in the csv file
     
-    lines = csv.readlines()
-    for line in lines:
-        line = line.replace('\n', '')
-        csv_data.append(VideoData(line.split(',')))
-    
-    csv.close()
+    with open(csv_file, 'r') as openfile:
+        data = csv.DictReader(openfile)
+        for line in data:
+            csv_data.append(VideoData(line))
     
     return csv_data
     
@@ -223,7 +230,7 @@ def call_process_skeleton(v):
     skeleton_output = path + "/" + v.skeleton_output
     
     try:
-        # If the deconvolved file doesn't exist, deconvolve the .ims file first
+        # If the skeleton file doesn't exist, skeletonize the file first
         if not os.path.exists(skeleton_output):
             success = call_skeletonize(v)
         
@@ -255,7 +262,49 @@ Output:
     True if successful, False if not
 """
 def call_analyze(v):
-    return True
+    success = True
+    
+    path = os.path.dirname(v.ims_file)
+    path += "/video_processing/" + os.path.basename(v.ims_file)[0:-4] 
+    
+    microglia_output = path + "/" + v.microglia_output
+    metadata_file = path + "/" + v.metadata_file
+    
+    # If the microglia file doesn't exist, process the skeleton first
+    if not os.path.exists(microglia_output):
+        success = call_process_skeleton(v)
+    
+    start_time = timeit.default_timer()
+    
+    if success:
+        ad.analyze_microglia(microglia_output, metadata_file)
+    
+    elapsed = timeit.default_timer() - start_time
+    print("Analyze: " + str(elapsed))
+    
+    return success
+
+
+def call_postprocess(v):
+    success = True
+    
+    path = os.path.dirname(v.ims_file)
+    path += "/video_processing/" + os.path.basename(v.ims_file)[0:-4] 
+    microglia_output = path + "/" + v.microglia_output
+    
+    # If this video hasn't been analyzed, do that first
+    if not os.path.exists(path + "/raw_data"):
+        success = call_analyze(v)
+    
+    start_time = timeit.default_timer()
+    
+    if success:
+        ad.postprocess_data(microglia_output, v.included_microglia)
+    
+    elapsed = timeit.default_timer() - start_time
+    print("Postprocess: " + str(elapsed))
+    
+    return success
     
 
 """
@@ -273,7 +322,8 @@ if __name__ == '__main__':
     
     video_data = [v for v in video_data if v.deconvolve == "true" \
                                           or v.skeletonize == "true" \
-                                          or v.analyze == "true"]
+                                          or v.analyze == "true" \
+                                          or v.postprocess == "true"]
 
     ### Optional -- split the data into odds and evens and run "odds" in one
     # terminal and "evens" in another so it gets done almost twice as fast.
@@ -281,7 +331,7 @@ if __name__ == '__main__':
     odds = video_data[1::2]
     evens = video_data[0::2]
     
-    video_data = odds
+    #video_data = odds
     ### Optional
     
     failures = []
@@ -314,6 +364,13 @@ if __name__ == '__main__':
         # Analyze it
         if v.analyze == "true":
             success = call_analyze(v)
+            if not success:
+                failures.append(v)
+                continue
+        
+        # Postprocess it
+        if v.postprocess == "true":
+            success = call_postprocess(v)
             if not success:
                 failures.append(v)
                 continue

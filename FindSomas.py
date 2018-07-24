@@ -10,7 +10,6 @@ Created on Mon Oct  2 13:12:56 2017
 """
 
 import scipy as sp
-from skimage import filters
 import cv2
 from Objects import FrameSoma, VideoSoma, BoundingBox
 

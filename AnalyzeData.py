@@ -13,8 +13,7 @@ import scipy as sp
     
 
 def write_csv(data, numFrames, out_file):
-    csv = open(out_file, 'w')
-    
+    data = [d for d in data if len(d) > 1]
     data = sp.array(data).T
     lines = ""
     
@@ -23,7 +22,11 @@ def write_csv(data, numFrames, out_file):
     new_data = None
     if len(data.shape) == 1:
         for d in data:
+            if len(d) == 0:
+                continue
+            
             stack = sp.vstack(d).T
+                
             if new_data is None:
                 new_data = stack
             else:
@@ -31,12 +34,13 @@ def write_csv(data, numFrames, out_file):
     
         data = new_data
     
-    for d in data:
-        lines += ",".join([str(n) for n in d]).replace("None","").replace("nan","0") + "\n"
+    if data is not None:
+        for d in data:
+            lines += ",".join([str(n) for n in d]).replace("None","").replace("nan","0") + "\n"
     
-    csv.writelines(lines)
-        
-    csv.close() 
+        csv = open(out_file, 'w')
+        csv.writelines(lines)
+        csv.close() 
     
     
 def analyze_microglia(microglia_fname, metadata_fname):
@@ -48,6 +52,7 @@ def analyze_microglia(microglia_fname, metadata_fname):
     microglia_csv_base = raw_path + "/microglia_identity.csv"
     soma_csv_base = raw_path + "/soma_"
     process_csv_base = raw_path + "/process_"
+    average_csv_base = raw_path + "/average_"
     
     with open(microglia_fname, 'rb') as f:
         microglia = pickle.load(f)
@@ -58,17 +63,21 @@ def analyze_microglia(microglia_fname, metadata_fname):
     microglia_ids = []
     soma_dict = {}
     process_dict = {}
+    average_dict = {}
     
-    numFrames = len(metadata.imgTimes)
+    numFrames = int(sp.ceil(30*60 / sp.mean(metadata.timeDeltas))) # 30 minutes
+    window_size = int(round(10*60 / sp.mean(metadata.timeDeltas))) # 10 minutes
         
+    
     for m in microglia:
         m.calculateSomaMovement(metadata, numFrames)
         m.calculateLeafData(metadata, numFrames)
         
         mID = microglia.index(m)
-        idCsv, somaCsv, processCsv = m.dataToDict(mID)
+        idCsv, somaCsv, processCsv, averageCsv = m.dataToDict(mID, window_size)
         
-        if idCsv is not None and somaCsv is not None and processCsv is not None:
+        if idCsv is not None and somaCsv is not None \
+            and processCsv is not None and averageCsv is not None:
             microglia_ids.append(idCsv)
                     
             for key, item in somaCsv.items():
@@ -80,6 +89,11 @@ def analyze_microglia(microglia_fname, metadata_fname):
                 if key not in process_dict:
                     process_dict[key] = []
                 process_dict[key].append(item)
+                
+            for key, item in averageCsv.items():
+                if key not in average_dict:
+                    average_dict[key] = []
+                average_dict[key].append(item)
     
     write_csv(microglia_ids, numFrames, microglia_csv_base)
     
@@ -88,11 +102,47 @@ def analyze_microglia(microglia_fname, metadata_fname):
         
     for key, item in process_dict.items():
         write_csv(item, numFrames, process_csv_base + key + ".csv")
-
+        
+    for key, item in average_dict.items():
+        write_csv(item, numFrames, average_csv_base + key + ".csv")
+        
+        
+def postprocess_data(microglia_fname, included_microglia):
+    path = os.path.dirname(microglia_fname)
+    raw_path = path + "/raw_data"
+    filtered_path = path + "/filtered_data"
+    if not os.path.isdir(filtered_path):
+        os.mkdir(filtered_path)
+        
+    files = os.listdir(raw_path)
+    
+    for file in files:
+        if file[0] != '.' and file[0] != '~' and file[-3:] == 'csv' \
+            and "identity" not in file.lower():
+            with open(raw_path + "/" + file, 'r') as readfile:
+                #line = readfile.readline().replace('\n','')
+                data = [line.split(',') for line in readfile.readlines()]
+                row1 = [float(x) for x in data[0] if x != '\n']
+                
+                indices = []
+                for r in range(len(row1)):
+                    if int(row1[r]) in included_microglia:
+                        indices.append(r)
+                        
+                data = [",".join(d) for d in sp.array(data)[:,indices]]
+                
+                for d in range(len(data)):
+                    if data[d][-1] != '\n':
+                        data[d] += '\n'
+                
+                with open(filtered_path + "/" + file, 'w') as writefile:
+                    writefile.writelines(data)
+                    
+                    
 
 if __name__ == "__main__":
-    metadata_fname  = '/Volumes/Baram Lab/2-photon Imaging/7-30-17_CRH-tdTomato+CX3CR1-GFP P8 PVN Ctrl/video_processing/7-30-17_CRH-tdTomato+CX3CR1-GFP P8 PVN Ctrl_Male 1 R PVN T1_b_4D/img_metadata.p'
-    microglia_fname = '/Volumes/Baram Lab/2-photon Imaging/7-30-17_CRH-tdTomato+CX3CR1-GFP P8 PVN Ctrl/video_processing/7-30-17_CRH-tdTomato+CX3CR1-GFP P8 PVN Ctrl_Male 1 R PVN T1_b_4D/processed_microglia.p'
+    metadata_fname  = '/Users/jaclynbeck/Desktop/BaramLab/videos/A_LPVN_T1_08202017/video_processing/8-20-17_crh-tdtomato+cx3cr1-gfp p8 pvn ces_male 1 l pvn t1_b_4d/img_metadata.p'
+    microglia_fname = '/Users/jaclynbeck/Desktop/BaramLab/videos/A_LPVN_T1_08202017/video_processing/8-20-17_crh-tdtomato+cx3cr1-gfp p8 pvn ces_male 1 l pvn t1_b_4d/processed_microglia.p'
     
     start_time = timeit.default_timer()
     

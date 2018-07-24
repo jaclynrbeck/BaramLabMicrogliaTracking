@@ -96,7 +96,7 @@ def deconvolve_images_2D(img_fname, output_fname, psf_fname, metadata_fname,
     javabridge.start_vm(class_path=bioformats.JARS)
     
     # Open the output file and the PSF file
-    #averaged_tif = TIFF.open(output_fname, mode='w')
+    averaged_tif = TIFF.open(output_fname, mode='w')
     psf = cv2.imread(psf_fname, cv2.IMREAD_GRAYSCALE)
     psf = psf / sp.sum(psf) # Normalize so the sum of all pixels is 1
 
@@ -123,7 +123,7 @@ def deconvolve_images_2D(img_fname, output_fname, psf_fname, metadata_fname,
     img0 = None
     
     numImages = meta.numImages
-    """
+    
     # Read each image, deconvolve it, and register it with the previous image
     with bioformats.ImageReader(img_fname) as reader:
         for t in range(numImages):
@@ -184,7 +184,7 @@ def deconvolve_images_2D(img_fname, output_fname, psf_fname, metadata_fname,
         reader.close()
 
     averaged_tif.close()
-    """
+    
     # Pickle the image metadata to a file for later use
     with open(metadata_fname, 'wb') as f:
         pickle.dump(meta, f)
@@ -201,10 +201,10 @@ Preferably the deconvolve function should be used with "AnalyzeAllVideos"
 instead for a little more error checking of file names/paths. 
 """
 if __name__=='__main__':
-    img_fname    = '/Volumes/Baram Lab/2-photon Imaging/7-30-17_CRH-tdTomato+CX3CR1-GFP P8 PVN Ctrl/7-30-17_CRH-tdTomato+CX3CR1-GFP P8 PVN Ctrl_Male 1 R PVN T1_b_4D.ims' 
+    img_fname    = '/Users/jaclynbeck/Desktop/BaramLab/videos/A_LPVN_T1_08202017/8-20-17_crh-tdtomato+cx3cr1-gfp p8 pvn ces_male 1 l pvn t1_b_4d.ims' 
     output_fname = 'preprocessed_max_projection_10iter.tif'
     metadata_fname = 'img_metadata.p'
-    psf_fname    = '/Volumes/Baram Lab/2-photon Imaging/PSF_GL_squared_920nm_single.png'
+    psf_fname    = '/Users/jaclynbeck/Desktop/BaramLab/PSF_GL_squared_920nm_single.png'
     start_time = timeit.default_timer()
 
     deconvolve_images_2D(img_fname, output_fname, psf_fname, metadata_fname, 1, 10)

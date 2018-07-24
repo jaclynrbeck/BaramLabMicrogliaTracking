@@ -236,7 +236,7 @@ def write_csv(data, numFrames, out_file):
 if __name__ == "__main__":
     skeleton_fname = "/Users/jaclynbeck/Desktop/BaramLab/videos/D_LPVN_T1_06132017/processed_skeleton_max_projection.tif"
     output_dir = "/Users/jaclynbeck/Desktop/BaramLab/videos/D_LPVN_T1_06132017/"
-    trees = ps.process_skeleton(skeleton_fname)
+    trees, orphans = ps.process_skeleton(skeleton_fname)
     
     numFrames = len(trees)
     centroids = []

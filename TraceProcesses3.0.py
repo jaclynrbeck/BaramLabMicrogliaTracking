@@ -117,8 +117,8 @@ def trace_image(img, index, kernel, output_dir):
 Main function for debugging
 """
 if __name__ == '__main__':
-    img_fname  = '/Users/jaclynbeck/Desktop/BaramLab/processed_max_projection.tif' #'/Users/jaclynbeck/Desktop/BaramLab/C2-8-29-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_.i...CX3CR1-GFP P8 PVN CES_Female 1 L PVN_a_GREEN_t1.tif'
-    output_dir = '/Users/jaclynbeck/Desktop/BaramLab/'
+    img_fname  = '/Users/jaclynbeck/Desktop/BaramLab/videos/A_LPVN_T1_08202017/processed_max_projection.tif' 
+    output_dir = '/Users/jaclynbeck/Desktop/BaramLab/videos/A_LPVN_T1_08202017/'
 
     tif = TIFF.open(img_fname, mode='r')
     out_tif = TIFF.open(output_dir + 'processed_skeleton_max_projection.tif', mode='w')
