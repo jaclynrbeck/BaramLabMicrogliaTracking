@@ -231,6 +231,19 @@ class FrameSoma(object):
         
     
     """
+    Draws the soma on an image. Soma is filled in.
+    Used for debugging and figure-making.
+    
+    Input:
+        img - the image to draw on (typically an array from scipy)
+        color - Color of the soma. Either a single value (i.e. between 0-255) 
+                or a tuple of RGB values, i.e. (255, 255, 255)
+    """
+    def draw(self, img, color):
+        img[self.cols(), self.rows()] = color
+        return img
+        
+    """
     This is used when calling soma.copy(). It creates a new soma object
     with the same frame, coordinates, and contour. 
     """
@@ -462,6 +475,19 @@ class VideoSoma(object):
         # Return the soma at the closest frame number
         return self.frameSomas[self.frames[index[0]]]
    
+    """
+    Draws the soma for a specified frame on an image.
+    Used for debugging and figure-making.
+    
+    Input:
+        img - the image to draw on (typically an array from scipy)
+        frame - which frame of the video should be drawn
+        color - Color of the soma. Either a single value (i.e. between 0-255) 
+                or a tuple of RGB values, i.e. (255, 255, 255)
+    """
+    def draw(self, img, frame, color):
+        soma = self.somaAtFrame(frame)
+        return soma.draw(img, color)
     
     """
     For less-than comparison during a sort function. One VideoSoma is "less 
@@ -568,6 +594,24 @@ class DirectedNode(object):
         return s
     
     """
+    Draws lines between this node and its children, and recursively on down
+    the chain of children. Used for debugging and figure-making.
+    
+    Input:
+        img - the image to draw on (typically an array from scipy)
+        color - either a single value (0-255) or a tuple of RGB values,
+                    i.e. (255, 255, 255)
+        thickness - line thickness. Default 2
+    """
+    def recursiveDraw(self, img, color, thickness=2):
+        for c in self.children:
+            img = cv2.line(img, tuple(self.coordinates), tuple(c.coordinates), 
+                           color, thickness)
+            img = c.recursiveDraw(img, color, thickness)
+            
+        return img
+    
+    """
     This is what will be displayed when calling print(DirectedNode). This 
     method is not recursive. 
     """
@@ -654,7 +698,20 @@ class DirectedTree(object):
         # Delete the object to free up memory
         del node
         
+    """
+    Draws the tree on an image. Used for debugging and figure-making.
     
+    Input:
+        img - the image to draw on (typically an array from scipy)
+        color - either a single value (0-255) or a tuple of RGB values,
+                    i.e. (255, 255, 255)
+        thickness - line thickness. Default 2
+    """
+    def draw(self, img, color, thickness=2):
+        img = cv2.circle(img, tuple(self.centerNode.coordinates), thickness, 
+                         color)
+        return self.centerNode.recursiveDraw(img, color, thickness)
+
     """
     This method is called during 'pickle'. It translates all of the class's 
     data into a dictionary so the object can be written to a file. 
@@ -819,6 +876,28 @@ class ProcessTip(object):
             self.velocityY[f2] = velocity[0]
             self.velocityMagnitude[f2]  = sp.sqrt(sp.sum(velocity**2))   
             self.lengthVelocity[f2] = (self.length[f2]-self.length[f1]) / (delta.total_seconds()/60.0)
+            
+    """
+    Draws the process tip on the image. 
+    Used for debugging and figure-making.
+    
+    Input:
+        img - the image to draw on (typically an array from scipy)
+        frame - which frame of the video should be drawn
+        color - Color of the tip. Either a single value (i.e. between 0-255) 
+                or a tuple of RGB values, i.e. (255, 255, 255)
+        thickness - line thickness. Default 2
+    """
+    def draw(self, img, frame, color, soma_coords, thickness=2):
+        if frame in self.getFrames():
+            tip = self.tips[frame]
+            
+            a = tuple(tip.coordinates)
+            
+            if not a in soma_coords:
+                img = cv2.circle(img, tuple(tip.coordinates), thickness, color,
+                                 thickness)
+        return img
             
 
 """
@@ -1202,3 +1281,27 @@ class Microglia(object):
         processData["NumberOfMainBranches"] = [mID] + list(self.numberOfMainBranches)
             
         return idData, somaData, processData, averageData
+    
+    """
+    Draws the microglia's tree and somas on an image. 
+    Used for debugging and figure-making.
+    
+    Input:
+        img - the image to draw on (typically an array from scipy)
+        frame - which frame of the video should be drawn
+        branchColor - Color of the drawn branches. Either a single value 
+                      (i.e. between 0-255) or a tuple of RGB values,
+                      i.e. (255, 255, 255)
+        somaColor - Color of the drawn soma. Same input type as branchColor
+        thickness - line thickness. Default 2
+    """
+    def draw(self, img, frame, branchColor, somaColor, tipColor, thickness=2):
+        tree = self.trees[frame]
+        img = tree.draw(img, branchColor, thickness)
+        
+        #soma = self.somas.somaAtFrame(frame)
+        #soma_coords = [tuple(x) for x in zip(soma.rows(), soma.cols())]
+        #for tip in self.processTips:
+        #    img = tip.draw(img, frame, tipColor, soma_coords, thickness)
+        img = self.somas.draw(img, frame, somaColor)
+        return img

@@ -84,13 +84,13 @@ def deconvolve_images_2D(img_fname, output_fname, psf_fname, metadata_fname,
     
     # Create the subdirectory "video_processing/<img_fname>"
     path = os.path.dirname(img_fname)
-    path += "/video_processing/" + os.path.basename(img_fname)[0:-4]
+    path = os.path.join(path, "video_processing", os.path.basename(img_fname)[0:-4])
     if not os.path.exists(path):
         os.makedirs(path)
     
     # Output and metadata will go in this subdirectory
-    output_fname = path + "/" + output_fname
-    metadata_fname = path + "/" + metadata_fname
+    output_fname = os.path.join(path, output_fname)
+    metadata_fname = os.path.join(path, metadata_fname)
     
     # This is needed for the bioformats library
     javabridge.start_vm(class_path=bioformats.JARS)

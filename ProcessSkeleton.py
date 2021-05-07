@@ -20,7 +20,7 @@ from scipy import sparse
 import FindSomas as fs
 import pickle
 import os
-from Objects import DirectedNode, DirectedTree, Microglia, ImageMetadata
+from Objects import DirectedNode, DirectedTree, Microglia
         
 
 """
@@ -252,15 +252,12 @@ def process_skeleton(skeleton_fname, img_fname, metadata_fname, soma_fname, micr
     img_tif  = TIFF.open(img_fname, mode='r')
     
     path = os.path.dirname(skeleton_fname)
-    metadata_fname = path + "/" + metadata_fname
-    soma_fname = path + "/" + soma_fname
-    microglia_fname = path + "/" + microglia_fname
+    metadata_fname = os.path.join(path, metadata_fname)
+    soma_fname = os.path.join(path, soma_fname)
+    microglia_fname = os.path.join(path, microglia_fname)
     
     with open(soma_fname, 'rb') as f:
         videoSomas = pickle.load(f)
-        
-    with open(metadata_fname, 'rb') as f:
-        metadata = pickle.load(f)
 
     frame = 0
     directedTrees = {}
@@ -283,11 +280,6 @@ def process_skeleton(skeleton_fname, img_fname, metadata_fname, soma_fname, micr
             dT.prune()
     
     microglia = match_trees(videoSomas, directedTrees)
-    #numFrames = len(directedTrees)
-    
-    #for m in microglia:
-    #    m.calculateSomaMovement(metadata, numFrames)
-    #    m.calculateLeafData(metadata, numFrames)
         
     with open(microglia_fname, 'wb') as f:
         pickle.dump(microglia, f)

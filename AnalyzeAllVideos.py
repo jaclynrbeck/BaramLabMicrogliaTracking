@@ -173,9 +173,9 @@ def call_deconvolve(v):
     
     # Check to see if the output file exists
     path = os.path.dirname(v.ims_file)
-    path += "/video_processing/" + os.path.basename(v.ims_file)[0:-4] 
+    path = os.path.join(path, "video_processing", os.path.basename(v.ims_file)[0:-4])
     
-    return os.path.isfile(path + "/" + v.dc_output)
+    return os.path.isfile(os.path.join(path, v.dc_output))
 
 
 """
@@ -193,9 +193,9 @@ def call_skeletonize(v):
     success = True
     
     path = os.path.dirname(v.ims_file)
-    path += "/video_processing/" + os.path.basename(v.ims_file)[0:-4] 
+    path = os.path.join(path, "video_processing", os.path.basename(v.ims_file)[0:-4])
     
-    dc_output = path + "/" + v.dc_output
+    dc_output = os.path.join(path, v.dc_output)
     
     try:
         # If the deconvolved file doesn't exist, deconvolve the .ims file first
@@ -217,17 +217,17 @@ def call_skeletonize(v):
     print("Skeletonize: " + str(elapsed))
     
     # Check if the skeleton file is there
-    return os.path.isfile(path + "/" + v.skeleton_output)
+    return os.path.isfile(os.path.join(path, v.skeleton_output))
 
 
 def call_process_skeleton(v):
     success = True
     
     path = os.path.dirname(v.ims_file)
-    path += "/video_processing/" + os.path.basename(v.ims_file)[0:-4] 
+    path = os.path.join(path, "video_processing", os.path.basename(v.ims_file)[0:-4])
     
-    dc_output = path + "/" + v.dc_output
-    skeleton_output = path + "/" + v.skeleton_output
+    dc_output = os.path.join(path, v.dc_output)
+    skeleton_output = os.path.join(path, v.skeleton_output)
     
     try:
         # If the skeleton file doesn't exist, skeletonize the file first
@@ -247,7 +247,7 @@ def call_process_skeleton(v):
     print("Process Skeleton: " + str(elapsed))
     
     # Check if the microglia file is there
-    return os.path.isfile(path + "/" + v.microglia_output)
+    return os.path.isfile(os.path.join(path, v.microglia_output))
 
 
 """
@@ -265,10 +265,10 @@ def call_analyze(v):
     success = True
     
     path = os.path.dirname(v.ims_file)
-    path += "/video_processing/" + os.path.basename(v.ims_file)[0:-4] 
+    path = os.path.join(path, "video_processing", os.path.basename(v.ims_file)[0:-4])
     
-    microglia_output = path + "/" + v.microglia_output
-    metadata_file = path + "/" + v.metadata_file
+    microglia_output = os.path.join(path, v.microglia_output)
+    metadata_file = os.path.join(path, v.metadata_file)
     
     # If the microglia file doesn't exist, process the skeleton first
     if not os.path.exists(microglia_output):
@@ -289,11 +289,11 @@ def call_postprocess(v):
     success = True
     
     path = os.path.dirname(v.ims_file)
-    path += "/video_processing/" + os.path.basename(v.ims_file)[0:-4] 
-    microglia_output = path + "/" + v.microglia_output
+    path = os.path.join(path, "video_processing", os.path.basename(v.ims_file)[0:-4])
+    microglia_output = os.path.join(path, v.microglia_output)
     
     # If this video hasn't been analyzed, do that first
-    if not os.path.exists(path + "/raw_data"):
+    if not os.path.exists(os.path.join(path, "raw_data")):
         success = call_analyze(v)
     
     start_time = timeit.default_timer()

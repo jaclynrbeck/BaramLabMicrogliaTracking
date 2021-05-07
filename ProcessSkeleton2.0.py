@@ -11,6 +11,7 @@ extra modifications to account for somas.
 """
 
 import scipy as sp
+import numpy as np
 import matplotlib.pyplot as plt
 from libtiff import TIFF
 import timeit
@@ -22,7 +23,7 @@ import FindSomas as fs
 import Utils
 import pickle
 import os
-        
+
 
 """
 This class represents a node in a directed graph.
@@ -443,7 +444,7 @@ def skeleton_to_tree(skeleton, img, somas):
         skeleton[soma.contourRows(), soma.contourCols()] = 254
         skeleton[soma.centroid[0], soma.centroid[1]] = 255
         
-    coords = sp.where((skeleton > 1)) 
+    coords = np.where((skeleton > 1)) 
     
     # Here we are adding a 3rd coordinate representing the color of the pixel,
     # so that the MST algorithm will preferentially connect brighter-colored
@@ -453,13 +454,13 @@ def skeleton_to_tree(skeleton, img, somas):
     # the high colors look closer. 
     values = skeleton[coords[0], coords[1]]-skeleton[skeleton > 1].min()
     values = 1 - values / values.max()
-    X = sp.vstack((coords[0], coords[1], values)).T
+    X = np.vstack((coords[0], coords[1], values)).T
     
     # Get a list of IDs that correspond to the soma centroids, for referencing
     # each tree's center node. 
     centroid_indices = []
     for soma in somas:
-        index = sp.where((X[:,0] == soma.centroid[0]) & (X[:,1] == soma.centroid[1]))[0]
+        index = np.where((X[:,0] == soma.centroid[0]) & (X[:,1] == soma.centroid[1]))[0]
         centroid_indices.append(index[0])
 
     # Create a nearest neighbors graph to pass to minimum_spanning_tree
@@ -477,7 +478,7 @@ def skeleton_to_tree(skeleton, img, somas):
         centroid_index = centroid_indices[somas.index(soma)]
         
         for c in soma.contour: 
-            contour_index = sp.where((X[:,0] == c[0]) & (X[:,1] == c[1]))[0]
+            contour_index = np.where((X[:,0] == c[0]) & (X[:,1] == c[1]))[0]
             lil_G[centroid_index, contour_index] = 0.1
             lil_G[contour_index, centroid_index] = 0.1
     
@@ -547,8 +548,8 @@ def process_skeleton(skeleton_fname, img_fname, soma_fname, tree_fname):
     img_tif  = TIFF.open(img_fname, mode='r')
     
     path = os.path.dirname(skeleton_fname)
-    soma_fname = path + "/" + soma_fname
-    tree_fname = path + "/" + tree_fname
+    soma_fname = os.path.join(path, soma_fname)
+    tree_fname = os.path.join(path, tree_fname)
     
     with open(soma_fname, 'rb') as f:
         videoSomas = pickle.load(f)

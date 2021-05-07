@@ -8,6 +8,7 @@ Created on Thu Oct 12 15:19:03 2017
 
 import cv2
 import scipy as sp
+import numpy as np
 import matplotlib.pyplot as plt
 from scipy import sparse
 
@@ -225,8 +226,17 @@ def plot_skeleton(regions, somas, img_size, display=False):
     return bw
 
 
+"""
+Input:
+    tree_csr - sparse matrix in compressed sparse row format 
+                (output from minimum_spanning_tree)
+    points - array of actual coordinates in the image that make up the nodes
+             in tree_csr. See variable "X" in skeleton_to_tree
+    img_size - tuple of the image size (i.e. (1024,1024))
+    display - whether to plot or not
+"""
 def plot_tree_csr(tree_csr, points, img_size, display=False):
-    bw = sp.zeros(img_size, dtype='uint8')
+    bw = np.zeros(img_size, dtype='uint8')
     N = sparse.coo_matrix(tree_csr)
     
     X = points[:,0:2]

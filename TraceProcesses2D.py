@@ -116,8 +116,8 @@ Output:
 def trace_all_images(img_fname, output_fname, soma_fname, threshold=THRESHOLD):
     # Make the local filenames full file paths
     path = os.path.dirname(img_fname)
-    output_fname = path + "/" + output_fname
-    soma_fname = path + "/" + soma_fname
+    output_fname = os.path.join(path, output_fname)
+    soma_fname = os.path.join(path, soma_fname)
     
     # Open the input and output image files
     tif = TIFF.open(img_fname, mode='r')

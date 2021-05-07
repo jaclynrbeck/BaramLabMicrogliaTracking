@@ -45,14 +45,14 @@ def write_csv(data, numFrames, out_file):
     
 def analyze_microglia(microglia_fname, metadata_fname):
     path = os.path.dirname(microglia_fname)
-    raw_path = path + "/raw_data"
+    raw_path = os.path.join(path, "raw_data")
     if not os.path.isdir(raw_path):
         os.mkdir(raw_path)
         
-    microglia_csv_base = raw_path + "/microglia_identity.csv"
-    soma_csv_base = raw_path + "/soma_"
-    process_csv_base = raw_path + "/process_"
-    average_csv_base = raw_path + "/average_"
+    microglia_csv_base = os.path.join(raw_path, "microglia_identity.csv")
+    soma_csv_base = os.path.join(raw_path, "soma_")
+    process_csv_base = os.path.join(raw_path, "process_")
+    average_csv_base = os.path.join(raw_path, "average_")
     
     with open(microglia_fname, 'rb') as f:
         microglia = pickle.load(f)
@@ -109,8 +109,8 @@ def analyze_microglia(microglia_fname, metadata_fname):
         
 def postprocess_data(microglia_fname, included_microglia):
     path = os.path.dirname(microglia_fname)
-    raw_path = path + "/raw_data"
-    filtered_path = path + "/filtered_data"
+    raw_path = os.path.join(path, "raw_data")
+    filtered_path = os.path.join(path, "filtered_data")
     if not os.path.isdir(filtered_path):
         os.mkdir(filtered_path)
         
@@ -119,7 +119,7 @@ def postprocess_data(microglia_fname, included_microglia):
     for file in files:
         if file[0] != '.' and file[0] != '~' and file[-3:] == 'csv' \
             and "identity" not in file.lower():
-            with open(raw_path + "/" + file, 'r') as readfile:
+            with open(os.path.join(raw_path, file), 'r') as readfile:
                 #line = readfile.readline().replace('\n','')
                 data = [line.split(',') for line in readfile.readlines()]
                 row1 = [float(x) for x in data[0] if x != '\n']
@@ -135,7 +135,7 @@ def postprocess_data(microglia_fname, included_microglia):
                     if data[d][-1] != '\n':
                         data[d] += '\n'
                 
-                with open(filtered_path + "/" + file, 'w') as writefile:
+                with open(os.path.join(filtered_path, file), 'w') as writefile:
                     writefile.writelines(data)
                     
                     
