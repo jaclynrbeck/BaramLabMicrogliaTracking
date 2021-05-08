@@ -322,6 +322,7 @@ if __name__ == '__main__':
     
     video_data = [v for v in video_data if v.deconvolve == "true" \
                                           or v.skeletonize == "true" \
+                                          or v.process_skeleton == "true" \
                                           or v.analyze == "true" \
                                           or v.postprocess == "true"]
 

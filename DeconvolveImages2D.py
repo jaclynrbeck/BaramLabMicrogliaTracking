@@ -192,7 +192,7 @@ def deconvolve_images_2D(img_fname, output_fname, psf_fname, metadata_fname,
     # Technically this should be uncommented but it interferes with the ability
     # to run multiple calls of this deconvolve function in a row so it is
     # commented out. 
-    #javabridge.kill_vm() 
+    javabridge.kill_vm() 
 
 
 """

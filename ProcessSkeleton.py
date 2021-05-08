@@ -17,6 +17,7 @@ import cv2
 from scipy.sparse.csgraph import minimum_spanning_tree, dijkstra
 from sklearn.neighbors import kneighbors_graph
 from scipy import sparse
+import numpy as np
 import FindSomas as fs
 import pickle
 import os
@@ -131,9 +132,15 @@ def create_directed_trees(tree_csr, X, centroid_indices):
         
         while len(stack) > 0:
             node = stack.pop()
-            dTree.nodes.append(node)
-            
             connections = list(N.col[N.row == node.value]) + list(N.row[N.col == node.value])
+            
+            # Anything that is only connected to the soma center is on the
+            # soma border and needs to be thrown out
+            if (len(connections) == 1) and (node.parent is centerNode):
+                centerNode.children.remove(node)
+                continue;
+                
+            dTree.nodes.append(node)
             
             # If this node has only one connection, and that connection is this
             # node's parent, this node is a leaf. 
@@ -228,7 +235,7 @@ def match_trees(videoSomas, trees):
             
             match = None
             for t in frameTrees:
-                if sp.all(t.centerNode.coordinates == frameSoma.centroid):
+                if np.all(t.centerNode.coordinates == frameSoma.centroid):
                     match = t
                     break
             
@@ -287,15 +294,31 @@ def process_skeleton(skeleton_fname, img_fname, metadata_fname, soma_fname, micr
         
 
 if __name__=='__main__':
-    skeleton_fname = "/Users/jaclynbeck/Desktop/BaramLab/videos/A_LPVN_T1_08202017/video_processing/8-20-17_crh-tdtomato+cx3cr1-gfp p8 pvn ces_male 1 l pvn t1_b_4d/skeleton.tif"
-    img_fname = "/Users/jaclynbeck/Desktop/BaramLab/videos/A_LPVN_T1_08202017/video_processing/8-20-17_crh-tdtomato+cx3cr1-gfp p8 pvn ces_male 1 l pvn t1_b_4d/preprocessed_max_projection_10iter.tif"
-    soma_fname = "somas.p"
-    metadata_fname = "img_metadata.p"
-    microglia_fname = "processed_microglia.p"
+    img_fname = "/Users/jaclynbeck/Desktop/BaramLab/videos/10-06-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Female 1 L PVN T2_b_4D_Female 2 L PVN T2.ims"
+
+    
+    path = os.path.dirname(img_fname)
+    path = os.path.join(path, "video_processing", os.path.basename(img_fname)[0:-4])
+    metadata_fname = os.path.join(path, 'img_metadata.p')
+    soma_fname = os.path.join(path, 'somas.p')
+    microglia_fname = os.path.join(path, 'processed_microglia.p')
+    tree_fname = os.path.join(path, 'directedTrees_pruned_new.p')
+    
     start_time = timeit.default_timer()
     
-    process_skeleton(skeleton_fname, img_fname, metadata_fname, soma_fname, microglia_fname)
+    #process_skeleton(skeleton_fname, img_fname, metadata_fname, soma_fname, microglia_fname)
+    
+    with open(soma_fname, 'rb') as f:
+        videoSomas = pickle.load(f)
         
+    with open(tree_fname, 'rb') as f:
+        directedTrees = pickle.load(f)
+        
+    microglia = match_trees(videoSomas, directedTrees)
+    
+    with open(microglia_fname, 'wb') as f:
+        pickle.dump(microglia, f)
+    
     elapsed = timeit.default_timer() - start_time
     print(elapsed)
 

@@ -699,6 +699,27 @@ class DirectedTree(object):
         del node
         
     """
+    Deletes nodes from a tree starting at a branch tip. It will delete the
+    process tip, then delete the parent IF the parent has no more child 
+    nodes, and so on until it either gets to the center of the tree or finds
+    a parent node with at least one child.
+    """
+    def recursiveDeleteTip(self, node):
+        if len(node.children) > 0:
+            return None
+        
+        if node.parent is not None:
+            parent = node.parent
+            self.deleteNode(node)
+            self.recursiveDeleteTip(parent)
+            if node in self.leaves:
+                self.leaves.remove(node)
+                
+        else: # This would be the soma center
+            return None
+        
+        
+    """
     Draws the tree on an image. Used for debugging and figure-making.
     
     Input:
@@ -730,7 +751,7 @@ class DirectedTree(object):
         for node in stateDict['nodes']:
             if node.parent is not None:
                 node.parent = stateDict['nodes'].index(node.parent)
-                
+
             if len(node.children) > 0:
                 new_children = []
                 for c in node.children:
@@ -1038,8 +1059,12 @@ class Microglia(object):
     
     Matched leaves are added to ProcessTip objects that will keep track of 
     leaves that match through the video. 
+    
+    Leaves that are actually on the soma contour are removed first.
     """
     def matchLeaves(self):
+        self.removeSomaLeaves()
+        
         frames = sorted(list(self.trees.keys()))
         f1 = frames[0]
         leaves1 = self.trees[f1].leaves
@@ -1051,6 +1076,12 @@ class Microglia(object):
             f2 = frames[i]
             leaves2 = self.trees[f2].leaves
             coords2 = [L.coordinates.astype('int32') for L in leaves2]
+            
+            if len(leaves1) == 0 or len(leaves2) == 0:
+                f1 = f2
+                leaves1 = leaves2
+                coords1 = coords2
+                continue
             
             # Match leaves in frame-1 and frame
             matches = Utils.find_matches(coords1, coords2)
@@ -1086,7 +1117,22 @@ class Microglia(object):
                 
             self.processTips.append(pTip)
             
-    
+    def removeSomaLeaves(self):
+        frames = sorted(list(self.trees.keys()))
+        
+        for f in frames:
+            to_remove = []
+            soma_coords = self.somas.somaAtFrame(f).coordinates
+            leaves = self.trees[f].leaves
+            for L in leaves:
+                if L.coordinates in soma_coords:
+                    to_remove.append(L)
+            
+            for L in to_remove:
+                self.trees[f].recursiveDeleteTip(L)
+                
+            
+        
     """
     Calculates statistics about the microglia and its tips throughout the video
     and stores them in class variables. This is separate from the soma
