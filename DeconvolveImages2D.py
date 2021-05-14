@@ -11,6 +11,7 @@ Created on Wed Oct 18 14:07:23 2017
 
 from libtiff import TIFF
 import scipy as sp
+import numpy as np
 import cv2
 import timeit
 import javabridge # required by bioformats
@@ -98,7 +99,7 @@ def deconvolve_images_2D(img_fname, output_fname, psf_fname, metadata_fname,
     # Open the output file and the PSF file
     averaged_tif = TIFF.open(output_fname, mode='w')
     psf = cv2.imread(psf_fname, cv2.IMREAD_GRAYSCALE)
-    psf = psf / sp.sum(psf) # Normalize so the sum of all pixels is 1
+    psf = psf / np.sum(psf) # Normalize so the sum of all pixels is 1
 
     # Process the metadata
     xml = bioformats.get_omexml_metadata(path=img_fname)
@@ -113,8 +114,8 @@ def deconvolve_images_2D(img_fname, output_fname, psf_fname, metadata_fname,
           str(meta.physX*meta.sizeX) + " x " + \
           str(meta.physY*meta.sizeY) +  " um)")
     
-    minutes = sp.mean(sp.array(meta.timeDeltas)) / 60.0
-    truncate = sp.ceil(30/minutes) # number of frames that equals 30 mins
+    minutes = np.mean(sp.array(meta.timeDeltas)) / 60.0
+    truncate = np.ceil(30/minutes) # number of frames that equals 30 mins
     if meta.numImages > truncate:
         meta.numImages = int(truncate)
         print("Truncating to " + str(meta.numImages) + " images (30 minutes)")

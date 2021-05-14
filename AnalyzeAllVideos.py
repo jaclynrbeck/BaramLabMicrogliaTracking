@@ -314,7 +314,8 @@ processing functions on that line. If any files fail, they are printed out
 at the end of the function. 
 """
 if __name__ == '__main__':
-    csv_file = "/Users/jaclynbeck/Desktop/BaramLab/videoData.csv"
+    #csv_file = "/home/jaclynbeck/Desktop/BaramLabFiles/videoData.csv"
+    csv_file = "/mnt/storage/BaramLabFiles/CX3CR1-Gq-DREADD mCitrine Videos/Peter's Analysis/Batch 1/51-101/videoData.csv"
     
     # Ingest the csv, then use only the data for which at least one of 
     # "deconvolve", "skeletonize", or "analyze" is set to true. 

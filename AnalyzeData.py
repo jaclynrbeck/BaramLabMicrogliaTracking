@@ -141,12 +141,15 @@ def postprocess_data(microglia_fname, included_microglia):
                     
 
 if __name__ == "__main__":
-    metadata_fname  = '/Users/jaclynbeck/Desktop/BaramLab/videos/A_LPVN_T1_08202017/video_processing/8-20-17_crh-tdtomato+cx3cr1-gfp p8 pvn ces_male 1 l pvn t1_b_4d/img_metadata.p'
-    microglia_fname = '/Users/jaclynbeck/Desktop/BaramLab/videos/A_LPVN_T1_08202017/video_processing/8-20-17_crh-tdtomato+cx3cr1-gfp p8 pvn ces_male 1 l pvn t1_b_4d/processed_microglia.p'
+    metadata_fname  = '/mnt/storage/BaramLabFiles/10-29-16 PVN CX3CR1-GFP; CRH-tdT P8 CES/video_processing/Male 5 L PVN T1_b_4D L PVN T1/img_metadata.p'
+    microglia_fname = '/mnt/storage/BaramLabFiles/10-29-16 PVN CX3CR1-GFP; CRH-tdT P8 CES/video_processing/Male 5 L PVN T1_b_4D L PVN T1/processed_microglia.p'
     
     start_time = timeit.default_timer()
     
     analyze_microglia(microglia_fname, metadata_fname)
+    
+    included_microglia = [3,5,7,8,10,12,13,14,15,16,17,19,21,25,26,27,29,34]
+    postprocess_data(microglia_fname, included_microglia)
         
     elapsed = timeit.default_timer() - start_time
     print(elapsed)

@@ -364,7 +364,7 @@ class VideoSoma(object):
         lastFrame = sorted(self.frames)[-1] 
         lastSoma = self.frameSomas[lastFrame]
     
-        diff = lastSoma.centroid - frameSoma.centroid
+        diff = (lastSoma.centroid - frameSoma.centroid).astype('double')
         dist = sp.sqrt(diff[0]**2 + diff[1]**2)
         
         return dist

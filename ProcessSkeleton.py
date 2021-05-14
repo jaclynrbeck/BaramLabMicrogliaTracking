@@ -10,11 +10,10 @@ https://github.com/jakevdp/mst_clustering , but without clustering and some
 extra modifications to account for somas. 
 """
 
-import scipy as sp
 from libtiff import TIFF
 import timeit
 import cv2
-from scipy.sparse.csgraph import minimum_spanning_tree, dijkstra
+from scipy.sparse.csgraph import minimum_spanning_tree, dijkstra, breadth_first_order
 from sklearn.neighbors import kneighbors_graph
 from scipy import sparse
 import numpy as np
@@ -48,12 +47,12 @@ def split_somas(tree_csr, soma_indices):
     
     # For each soma, check if there's a path between it and another soma
     for i in range(len(soma_indices)-1):
-        for j in sp.arange(i+1, len(soma_indices)):
+        for j in np.arange(i+1, len(soma_indices)):
             soma1 = soma_indices[i]
             soma2 = soma_indices[j]
             
             # If a path exists, trace it and break it at the longest gap
-            if dist[i,soma2] != sp.inf and dist[i, soma2] > 0:
+            if dist[i,soma2] != np.inf and dist[i, soma2] > 0:
                 path = []
                 p = soma2
                 while p != soma1:
@@ -64,13 +63,13 @@ def split_somas(tree_csr, soma_indices):
                         path = []
                         break
                     
-                    path.append((sp.round_(distance, 1), p))
+                    path.append((np.round_(distance, 1), p))
                     p = points[i,p] # This points us to the next node in the path
             
             
                 if len(path) > 0:
-                    arr = sp.array(path)
-                    index = sp.where(arr[:,0] == arr[:,0].max())[0]
+                    arr = np.array(path)
+                    index = np.where(arr[:,0] == arr[:,0].max())[0]
                     break_pt = sorted(index)[int(round(len(index)/2))]
             
                     # This effectively deletes the break point from the tree
@@ -102,8 +101,8 @@ def extract_soma_information(skeleton):
     
     somas = []
     
-    for i in sp.arange(1, number):
-        soma_coords = sp.vstack(sp.where(labels == i)).T
+    for i in np.arange(1, number):
+        soma_coords = np.vstack(np.where(labels == i)).T
         soma = fs.FrameSoma(0, soma_coords)
         somas.append(soma)
         
@@ -122,44 +121,46 @@ Output:
     directedTrees - list of DirectedTree objects, one per soma
 """
 def create_directed_trees(tree_csr, X, centroid_indices):
-    N = sparse.coo_matrix(tree_csr)  # For easier indexing into the tree
-    
     directedTrees = []
     for c in centroid_indices:
+        (inds, preds) = breadth_first_order(tree_csr, c, directed=False, 
+                                            return_predecessors=True)
+        nodeDict = {}
+        
         centerNode = DirectedNode(c, X[c][0:2])
         dTree = DirectedTree(centerNode)
-        stack = [centerNode]
         
-        while len(stack) > 0:
-            node = stack.pop()
-            connections = list(N.col[N.row == node.value]) + list(N.row[N.col == node.value])
+        node = centerNode
+        nodeDict[node.value] = node
+        
+        for i in range(1, len(inds)):
+            c_num = inds[i]
+            p_num = preds[c_num]
+
+            if p_num != node.value:
+                if p_num in nodeDict.keys():
+                    node = nodeDict[p_num]
+                else:
+                    print("Error processing node " + str(c_num) \
+                          + " and predecessor " + str(p_num))
+                    continue
+            
+            connections = len(np.where(preds == c_num)[0])
             
             # Anything that is only connected to the soma center is on the
             # soma border and needs to be thrown out
-            if (len(connections) == 1) and (node.parent is centerNode):
-                centerNode.children.remove(node)
-                continue;
-                
-            dTree.nodes.append(node)
+            if p_num == c and connections == 0:
+                continue
             
-            # If this node has only one connection, and that connection is this
-            # node's parent, this node is a leaf. 
-            if (len(connections) == 1) and (node.parent is not None) \
-                and (node.parent.value == connections[0]):
-                    dTree.leaves.append(node)
-                    continue
+            c_node = DirectedNode(c_num, X[c_num][0:2])
+            c_node.addParent(node)
+            node.children.append(c_node)
+            nodeDict[c_node.value] = c_node
             
-            # Otherwise for each connection that isn't this node's parent, add
-            # it to the stack for processing
-            for conn in connections:
-                if node.parent is not None and node.parent.value == conn:
-                    continue
-                
-                c_node = DirectedNode(conn, X[conn][0:2])
-                c_node.addParent(node)
-                node.children.append(c_node)
-                stack.append(c_node)
-    
+            if connections == 0:
+                dTree.leaves.append(c_node)
+            
+        dTree.nodes = list(nodeDict.values())
         directedTrees.append(dTree)
     
     return directedTrees
@@ -170,7 +171,7 @@ def skeleton_to_tree(skeleton, img, somas):
     for soma in somas:
         skeleton[soma.centroid[0], soma.centroid[1]] = 255
         
-    coords = sp.where((skeleton > 1)) 
+    coords = np.where((skeleton > 1)) 
     
     # Here we are adding a 3rd coordinate representing the color of the pixel,
     # so that the MST algorithm will preferentially connect brighter-colored
@@ -180,13 +181,13 @@ def skeleton_to_tree(skeleton, img, somas):
     # the high colors look closer. 
     values = skeleton[coords[0], coords[1]]-skeleton[skeleton > 1].min()
     values = 1 - values / values.max()
-    X = sp.vstack((coords[0], coords[1], values)).T
+    X = np.vstack((coords[0], coords[1], values)).T
     
     # Get a list of IDs that correspond to the soma centroids, for referencing
     # each tree's center node. 
     centroid_indices = []
     for soma in somas:
-        index = sp.where((X[:,0] == soma.centroid[0]) & (X[:,1] == soma.centroid[1]))[0]
+        index = np.where((X[:,0] == soma.centroid[0]) & (X[:,1] == soma.centroid[1]))[0]
         centroid_indices.append(index[0])
 
     # Create a nearest neighbors graph to pass to minimum_spanning_tree
@@ -204,7 +205,7 @@ def skeleton_to_tree(skeleton, img, somas):
         centroid_index = centroid_indices[somas.index(soma)]
         
         for c in soma.contour: 
-            contour_index = sp.where((X[:,0] == c[0]) & (X[:,1] == c[1]))[0]
+            contour_index = np.where((X[:,0] == c[0]) & (X[:,1] == c[1]))[0]
             lil_G[centroid_index, contour_index] = 0.1
             lil_G[contour_index, centroid_index] = 0.1
     
@@ -294,11 +295,14 @@ def process_skeleton(skeleton_fname, img_fname, metadata_fname, soma_fname, micr
         
 
 if __name__=='__main__':
-    img_fname = "/Users/jaclynbeck/Desktop/BaramLab/videos/10-06-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Female 1 L PVN T2_b_4D_Female 2 L PVN T2.ims"
+    img_fname = "/mnt/storage/BaramLabFiles/10-29-16 PVN CX3CR1-GFP; CRH-tdT P8 CES/Male 5 L PVN T1_b_4D L PVN T1.ims"
 
-    
     path = os.path.dirname(img_fname)
-    path = os.path.join(path, "video_processing", os.path.basename(img_fname)[0:-4])
+    path = os.path.join(path, "video_processing", 
+                        os.path.basename(img_fname)[0:-4])
+    
+    img_fname = os.path.join(path, 'preprocessed_max_projection_10iter.tif')
+    skeleton_fname = os.path.join(path, 'skeleton.tif')
     metadata_fname = os.path.join(path, 'img_metadata.p')
     soma_fname = os.path.join(path, 'somas.p')
     microglia_fname = os.path.join(path, 'processed_microglia.p')
@@ -306,7 +310,7 @@ if __name__=='__main__':
     
     start_time = timeit.default_timer()
     
-    #process_skeleton(skeleton_fname, img_fname, metadata_fname, soma_fname, microglia_fname)
+    process_skeleton(skeleton_fname, img_fname, metadata_fname, soma_fname, microglia_fname)
     
     with open(soma_fname, 'rb') as f:
         videoSomas = pickle.load(f)
