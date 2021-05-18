@@ -21,7 +21,7 @@ import FindSomas as fs
 import pickle
 import os
 from Objects import DirectedNode, DirectedTree, Microglia
-        
+import Utils
 
 """
 This function ensures that no two somas are connected by a path through the 
@@ -181,7 +181,8 @@ def skeleton_to_tree(skeleton, img, somas):
     # the high colors look closer. 
     values = skeleton[coords[0], coords[1]]-skeleton[skeleton > 1].min()
     values = 1 - values / values.max()
-    X = np.vstack((coords[0], coords[1], values)).T
+    #X = np.vstack((coords[0], coords[1], values)).T
+    X = np.vstack(coords).T
     
     # Get a list of IDs that correspond to the soma centroids, for referencing
     # each tree's center node. 
@@ -191,23 +192,29 @@ def skeleton_to_tree(skeleton, img, somas):
         centroid_indices.append(index[0])
 
     # Create a nearest neighbors graph to pass to minimum_spanning_tree
-    n_neighbors = 100
+    n_neighbors = 50
     G = kneighbors_graph(X, n_neighbors=n_neighbors,
                          mode='distance',
                          metric='euclidean',
                          metric_params=None)
+    
+    # Add the pixel values as an extra weight to the distance
+    dists = np.vstack(sparse.find(G))
+    pairs = np.max(values[dists[0:2].astype('int')], axis=0)
+    dists[2] = dists[2] + pairs
         
     # Edit the nearest neighbors graph to artificially force the centroid and 
     # contour points to look close together. MST will connect these first
     # before looking for other points.
     lil_G = G.tolil() # Linked list format is faster for editing specific indices 
+    lil_G[dists[0], dists[1]] = dists[2]
     for soma in somas:
         centroid_index = centroid_indices[somas.index(soma)]
         
         for c in soma.contour: 
             contour_index = np.where((X[:,0] == c[0]) & (X[:,1] == c[1]))[0]
-            lil_G[centroid_index, contour_index] = 0.1
-            lil_G[contour_index, centroid_index] = 0.1
+            lil_G[centroid_index, contour_index] = 0.01
+            lil_G[contour_index, centroid_index] = 0.01
     
     G = lil_G.tocsr()
     
@@ -221,8 +228,10 @@ def skeleton_to_tree(skeleton, img, somas):
     # Break connections between somas
     tree_csr = split_somas(tree_csr, centroid_indices)
     
+    tree_csr_img = Utils.plot_tree_csr(tree_csr, X, (1024,1024), False)
+    
     directedTrees = create_directed_trees(tree_csr, X, centroid_indices)
-    return directedTrees
+    return directedTrees, tree_csr_img
 
 
 def match_trees(videoSomas, trees):
@@ -269,24 +278,37 @@ def process_skeleton(skeleton_fname, img_fname, metadata_fname, soma_fname, micr
 
     frame = 0
     directedTrees = {}
+    tree_csr_imgs = {}
     
     for skel, img in zip(skel_tif.iter_images(), img_tif.iter_images()): 
         somas = []
         for v in videoSomas:
             if frame in v.frames: somas.append(v.frameSomas[frame])
             
-        trees = skeleton_to_tree(skel, img, somas)
+        (trees, tree_csr_img) = skeleton_to_tree(skel, img, somas)
         directedTrees[frame] = trees
+        tree_csr_imgs[frame] = tree_csr_img
         frame += 1
         
     skel_tif.close()
     img_tif.close()
+    
+    output_fname = os.path.join(path, "tree_csrs.tif")
+    out_tif = TIFF.open(output_fname, mode='w')
+    for img in tree_csr_imgs.values():
+        out_tif.write_image(img.astype('<u2'))
+    
+    #with open(os.path.join(path, 'directedTrees_unpruned.p'), 'wb') as f:
+    #    pickle.dump(directedTrees, f)
     
     # Prune short branches
     for frame in directedTrees:
         for dT in directedTrees[frame]:
             dT.prune()
     
+    #with open(os.path.join(path, 'directedTrees_pruned.p'), 'wb') as f:
+    #    pickle.dump(directedTrees, f)
+        
     microglia = match_trees(videoSomas, directedTrees)
         
     with open(microglia_fname, 'wb') as f:
@@ -295,7 +317,7 @@ def process_skeleton(skeleton_fname, img_fname, metadata_fname, soma_fname, micr
         
 
 if __name__=='__main__':
-    img_fname = "/mnt/storage/BaramLabFiles/10-29-16 PVN CX3CR1-GFP; CRH-tdT P8 CES/Male 5 L PVN T1_b_4D L PVN T1.ims"
+    img_fname = "/mnt/storage/BaramLabFiles/7-20-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES/7-20-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Male 3 L PVN T1_b_4D_Male 3 L PVN T1.ims"
 
     path = os.path.dirname(img_fname)
     path = os.path.join(path, "video_processing", 
@@ -306,11 +328,17 @@ if __name__=='__main__':
     metadata_fname = os.path.join(path, 'img_metadata.p')
     soma_fname = os.path.join(path, 'somas.p')
     microglia_fname = os.path.join(path, 'processed_microglia.p')
-    tree_fname = os.path.join(path, 'directedTrees_pruned_new.p')
+    tree_fname = os.path.join(path, 'directedTrees_pruned.p')
     
     start_time = timeit.default_timer()
     
     process_skeleton(skeleton_fname, img_fname, metadata_fname, soma_fname, microglia_fname)
+
+    elapsed = timeit.default_timer() - start_time
+    print(elapsed)
+    
+    """
+    start_time = timeit.default_timer()
     
     with open(soma_fname, 'rb') as f:
         videoSomas = pickle.load(f)
@@ -325,5 +353,5 @@ if __name__=='__main__':
     
     elapsed = timeit.default_timer() - start_time
     print(elapsed)
-
+    """
 
