@@ -9,12 +9,12 @@ Created on Thu Nov  9 22:02:48 2017
 import pickle
 import timeit
 import os
-import scipy as sp
+import numpy as np
     
 
 def write_csv(data, numFrames, out_file):
     data = [d for d in data if len(d) > 1]
-    data = sp.array(data).T
+    data = np.array(data, dtype=object).T
     lines = ""
     
     # If this is a list of process data, it will have sublists within each
@@ -25,12 +25,12 @@ def write_csv(data, numFrames, out_file):
             if len(d) == 0:
                 continue
             
-            stack = sp.vstack(d).T
+            stack = np.vstack(d).T
                 
             if new_data is None:
                 new_data = stack
             else:
-                new_data = sp.concatenate((new_data, stack), axis=1)
+                new_data = np.concatenate((new_data, stack), axis=1)
     
         data = new_data
     
@@ -65,8 +65,8 @@ def analyze_microglia(microglia_fname, metadata_fname):
     process_dict = {}
     average_dict = {}
     
-    numFrames = int(sp.ceil(30*60 / sp.mean(metadata.timeDeltas))) # 30 minutes
-    window_size = int(round(10*60 / sp.mean(metadata.timeDeltas))) # 10 minutes
+    numFrames = int(np.ceil(30*60 / np.mean(metadata.timeDeltas))) # 30 minutes
+    window_size = int(round(10*60 / np.mean(metadata.timeDeltas))) # 10 minutes
         
     
     for m in microglia:
@@ -117,8 +117,8 @@ def postprocess_data(microglia_fname, included_microglia):
     files = os.listdir(raw_path)
     
     for file in files:
-        if file[0] != '.' and file[0] != '~' and file[-3:] == 'csv' \
-            and "identity" not in file.lower():
+        if file[0] != '.' and file[0] != '~' and file[-3:] == 'csv': #\
+            #and "identity" not in file.lower():
             with open(os.path.join(raw_path, file), 'r') as readfile:
                 #line = readfile.readline().replace('\n','')
                 data = [line.split(',') for line in readfile.readlines()]
@@ -129,7 +129,7 @@ def postprocess_data(microglia_fname, included_microglia):
                     if int(row1[r]) in included_microglia:
                         indices.append(r)
                         
-                data = [",".join(d) for d in sp.array(data)[:,indices]]
+                data = [",".join(d) for d in np.array(data)[:,indices]]
                 
                 for d in range(len(data)):
                     if data[d][-1] != '\n':
@@ -141,14 +141,14 @@ def postprocess_data(microglia_fname, included_microglia):
                     
 
 if __name__ == "__main__":
-    metadata_fname  = '/mnt/storage/BaramLabFiles/10-29-16 PVN CX3CR1-GFP; CRH-tdT P8 CES/video_processing/Male 5 L PVN T1_b_4D L PVN T1/img_metadata.p'
-    microglia_fname = '/mnt/storage/BaramLabFiles/10-29-16 PVN CX3CR1-GFP; CRH-tdT P8 CES/video_processing/Male 5 L PVN T1_b_4D L PVN T1/processed_microglia.p'
+    metadata_fname  = '/mnt/storage/BaramLabFiles/7-20-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES/video_processing/7-20-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Male 3 L PVN T1_b_4D_Male 3 L PVN T1/img_metadata.p'
+    microglia_fname = '/mnt/storage/BaramLabFiles/7-20-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES/video_processing/7-20-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Male 3 L PVN T1_b_4D_Male 3 L PVN T1/processed_microglia.p'
     
     start_time = timeit.default_timer()
     
     analyze_microglia(microglia_fname, metadata_fname)
     
-    included_microglia = [3,5,7,8,10,12,13,14,15,16,17,19,21,25,26,27,29,34]
+    included_microglia = [1,3,6,8,9,10,11,12,13,14,15,16,17,18,19,22,23,25,31,33]
     postprocess_data(microglia_fname, included_microglia)
         
     elapsed = timeit.default_timer() - start_time

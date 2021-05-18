@@ -11,6 +11,7 @@ import datetime
 import scipy as sp
 import cv2
 import Utils
+import numpy as np
 
 
 """
@@ -101,7 +102,7 @@ class BoundingBox(object):
         self.col_max = col_max
         
     def asArray(self):
-        return sp.array([self.row_min, self.col_min, self.row_max, 
+        return np.array([self.row_min, self.col_min, self.row_max, 
                          self.col_max])
     
     def width(self):
@@ -164,8 +165,8 @@ class FrameSoma(object):
         
         # The centroid is the mean of rows and mean of columns, turned into
         # a (2,) ndarray
-        self.centroid = sp.round_( 
-                           sp.mean(self.coordinates, axis=0) ).astype('int16')
+        self.centroid = np.round_( 
+                           np.mean(self.coordinates, axis=0) ).astype('int16')
     
     
     """
@@ -207,7 +208,7 @@ class FrameSoma(object):
     to a usable Nx2 ndarray. 
     """    
     def calculateContour(self):
-        bw = sp.zeros((self.bbox.height(), self.bbox.width()), dtype='uint8')
+        bw = np.zeros((self.bbox.height(), self.bbox.width()), dtype='uint8')
         bw[self.rows()-self.bbox.row_min, self.cols()-self.bbox.col_min] = 1
         
         contours = cv2.findContours(bw, cv2.RETR_EXTERNAL, 
@@ -217,16 +218,16 @@ class FrameSoma(object):
         # contours is a list of M contours, where each element is an Nx2 array 
         # of coordinates belonging to each contour. This code flattens the 
         # array into (M*N)x2 and removes duplicate points. 
-        contours = [sp.reshape(c,(c.shape[0]*c.shape[1], c.shape[2])) \
+        contours = [np.reshape(c,(c.shape[0]*c.shape[1], c.shape[2])) \
                     for c in contours]
-        contours = sp.concatenate(contours)
-        contours = sp.array(list(set(tuple(p) for p in contours))) 
+        contours = np.concatenate(contours)
+        contours = np.array(list(set(tuple(p) for p in contours))) 
         
         # contours are in terms of x,y instead of row,col, so the coordinates 
         # need to be reversed. This also undoes the coordinate adjustment done 
         # at the beginning of this function to account for using only the 
         # bounding box
-        self.contour = sp.column_stack((contours[:,1]+self.bbox.row_min,
+        self.contour = np.column_stack((contours[:,1]+self.bbox.row_min,
                                         contours[:,0]+self.bbox.col_min))
         
     
@@ -365,7 +366,7 @@ class VideoSoma(object):
         lastSoma = self.frameSomas[lastFrame]
     
         diff = (lastSoma.centroid - frameSoma.centroid).astype('double')
-        dist = sp.sqrt(diff[0]**2 + diff[1]**2)
+        dist = np.sqrt(diff[0]**2 + diff[1]**2)
         
         return dist
     
@@ -443,7 +444,7 @@ class VideoSoma(object):
                 
                 # Merge the coordinates, ensuring there are no duplicates by
                 # making them a set before converting them to an array. 
-                new_coords = sp.array(list(set.union(coords1, coords2)))
+                new_coords = np.array(list(set.union(coords1, coords2)))
                 new_soma = FrameSoma(f, new_coords)
     
                 # This new soma replaces the old one in the array. Delete
@@ -469,8 +470,8 @@ class VideoSoma(object):
             return self.frameSomas[frame]
         
         # Otherwise find the nearest frame number by distance
-        dist = abs(sp.array(self.frames) - frame)
-        index = sp.argsort(dist)
+        dist = abs(np.array(self.frames) - frame)
+        index = np.argsort(dist)
         
         # Return the soma at the closest frame number
         return self.frameSomas[self.frames[index[0]]]
@@ -540,7 +541,7 @@ class DirectedNode(object):
     """    
     def addParent(self, node):
         self.parent = node
-        self.length = self.parent.length + sp.sqrt(sp.sum((self.parent.coordinates-self.coordinates)**2))
+        self.length = self.parent.length + np.sqrt(np.sum((self.parent.coordinates-self.coordinates)**2))
         
     
     """
@@ -567,7 +568,7 @@ class DirectedNode(object):
         if len(self.children) > 1:
             # If the length of the branch is too small, return the previous
             # node in the recursive loop, which is the root of the branch
-            if leafNode.length - self.length < 10:
+            if leafNode.length - self.length < 5:
                 return previousNode
             
             # If the branch is long enough, don't prune
@@ -866,12 +867,12 @@ class ProcessTip(object):
         numFrames - number of frames in the video
     """    
     def calculateData(self, metadata, numFrames):
-        self.velocityX = sp.full((numFrames,), None)
-        self.velocityY = sp.full((numFrames,), None)
-        self.velocityMagnitude  = sp.full((numFrames,), None)
-        self.length = sp.full((numFrames,), None)
-        self.lengthVelocity = sp.full((numFrames,), None)
-        self.location = sp.full((numFrames,), None)
+        self.velocityX = np.full((numFrames,), None)
+        self.velocityY = np.full((numFrames,), None)
+        self.velocityMagnitude  = np.full((numFrames,), None)
+        self.length = np.full((numFrames,), None)
+        self.lengthVelocity = np.full((numFrames,), None)
+        self.location = np.full((numFrames,), None)
     
         frames = [k for k in self.tips.keys()]
         self.length[frames[0]] = self.tips[frames[0]].length * metadata.physX
@@ -895,7 +896,7 @@ class ProcessTip(object):
             velocity = (tip2.coordinates - tip1.coordinates) * metadata.physX / (delta.total_seconds()/60.0)
             self.velocityX[f2] = velocity[1]
             self.velocityY[f2] = velocity[0]
-            self.velocityMagnitude[f2]  = sp.sqrt(sp.sum(velocity**2))   
+            self.velocityMagnitude[f2]  = np.sqrt(np.sum(velocity**2))   
             self.lengthVelocity[f2] = (self.length[f2]-self.length[f1]) / (delta.total_seconds()/60.0)
             
     """
@@ -1005,13 +1006,13 @@ class Microglia(object):
         numFrames - number of frames in the video
     """
     def calculateSomaMovement(self, metadata, numFrames):
-        self.somaCentroidX = sp.full((numFrames,), None)
-        self.somaCentroidY = sp.full((numFrames,), None)
-        self.somaVelocityX = sp.full((numFrames,), None)
-        self.somaVelocityY = sp.full((numFrames,), None)
-        self.somaVelocityMagnitude = sp.full((numFrames,), None)
-        self.somaArea = sp.full((numFrames,), None)
-        self.somaConvexity = sp.full((numFrames,), None)
+        self.somaCentroidX = np.full((numFrames,), None)
+        self.somaCentroidY = np.full((numFrames,), None)
+        self.somaVelocityX = np.full((numFrames,), None)
+        self.somaVelocityY = np.full((numFrames,), None)
+        self.somaVelocityMagnitude = np.full((numFrames,), None)
+        self.somaArea = np.full((numFrames,), None)
+        self.somaConvexity = np.full((numFrames,), None)
         
         frames = [k for k in self.trees.keys()]
         f1 = frames[0]
@@ -1039,7 +1040,7 @@ class Microglia(object):
             velocity = (c2 - c1)*metadata.physX / (delta.total_seconds()/60.0)
             self.somaVelocityX[f2] = velocity[1]
             self.somaVelocityY[f2] = velocity[0]
-            self.somaVelocityMagnitude[f2] = sp.sqrt(sp.sum(velocity**2))
+            self.somaVelocityMagnitude[f2] = np.sqrt(np.sum(velocity**2))
             
             self.somaArea[f2] = len(s2.coordinates) * microns2
             
@@ -1083,14 +1084,16 @@ class Microglia(object):
                 coords1 = coords2
                 continue
             
+            dist = sp.spatial.distance.cdist(coords1, coords2)
+            
             # Match leaves in frame-1 and frame
             matches = Utils.find_matches(coords1, coords2)
             
-            # Any matches that are > 50 pixels apart are probably not really
+            # Any matches that are > 20 pixels apart are probably not really
             # matches. Discard those and keep the rest. 
             for m in matches:
                 dist = m[2]
-                if dist <= 50: 
+                if dist <= 20: 
                     leaf1 = (f1, leaves1[m[0]])
                     leaf2 = (f2, leaves2[m[1]])
                 
@@ -1125,7 +1128,8 @@ class Microglia(object):
             soma_coords = self.somas.somaAtFrame(f).coordinates
             leaves = self.trees[f].leaves
             for L in leaves:
-                if L.coordinates in soma_coords:
+                if np.any((soma_coords[:,0] == L.coordinates[0]) & 
+                          (soma_coords[:,1] == L.coordinates[1])):
                     to_remove.append(L)
             
             for L in to_remove:
@@ -1151,9 +1155,9 @@ class Microglia(object):
         numFrames - number of frames in the video
     """
     def calculateLeafData(self, metadata, numFrames):
-        self.domainArea = sp.full((numFrames,), None)
-        self.numberOfProcesses = sp.zeros((numFrames,))
-        self.numberOfMainBranches = sp.full((numFrames,), None)
+        self.domainArea = np.full((numFrames,), None)
+        self.numberOfProcesses = np.zeros((numFrames,))
+        self.numberOfMainBranches = np.full((numFrames,), None)
         
         for p in self.processTips:
             p.calculateData(metadata, numFrames)
@@ -1166,7 +1170,7 @@ class Microglia(object):
         microns2 = metadata.physX * metadata.physY # microns^2
         
         for frame, tree in self.trees.items():
-            coords = sp.array([N.coordinates for N in tree.nodes])
+            coords = np.array([N.coordinates for N in tree.nodes])
             hull = cv2.convexHull(coords.astype('int32'))
             self.domainArea[frame] = cv2.contourArea(hull) * microns2
             
@@ -1192,15 +1196,15 @@ class Microglia(object):
     """
     def means(self, data, window_size):
         averages = []
-        for i in sp.arange(0, len(data), window_size):
+        for i in np.arange(0, len(data), window_size):
             end = min(i+window_size, len(data))
             valid = [d for d in data[i:end] if d is not None]
             if len(valid) > 0:
-                averages.append(sp.mean(valid))
+                averages.append(np.mean(valid))
             else:
                 averages.append(None)
         
-        averages.append(sp.mean([d for d in data if d is not None]))
+        averages.append(np.mean([d for d in data if d is not None]))
         
         return averages
     
@@ -1225,7 +1229,7 @@ class Microglia(object):
                  the data, etc. 
     """
     def meanOfMeans(self, mID, data):
-        arr = sp.array(data)
+        arr = np.array(data)
         m_mean = [mID]
         
         if len(arr) < 1:
@@ -1234,7 +1238,7 @@ class Microglia(object):
         for i in range(2,arr.shape[1]):
             values = [x for x in arr[:,i] if x is not None]
             if len(values) > 0:
-                m_mean += [sp.mean(values)]
+                m_mean += [np.mean(values)]
             else:
                 m_mean += [None]
             
@@ -1301,7 +1305,7 @@ class Microglia(object):
         
         for p in self.processTips:
             valid = [v for v in p.velocityX if v is not None]
-            if len(valid) < 5: # Exclude tips that aren't in 5 or more frames
+            if len(valid) < 1: # Exclude tips that aren't in 3 or more frames
                 continue
             
             tID = [mID, self.processTips.index(p)]
