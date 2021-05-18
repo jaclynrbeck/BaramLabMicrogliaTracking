@@ -122,9 +122,11 @@ Output:
 """
 def create_directed_trees(tree_csr, X, centroid_indices):
     directedTrees = []
+
     for c in centroid_indices:
         (inds, preds) = breadth_first_order(tree_csr, c, directed=False, 
                                             return_predecessors=True)
+
         nodeDict = {}
         
         centerNode = DirectedNode(c, X[c][0:2])
@@ -159,7 +161,7 @@ def create_directed_trees(tree_csr, X, centroid_indices):
             
             if connections == 0:
                 dTree.leaves.append(c_node)
-            
+
         dTree.nodes = list(nodeDict.values())
         directedTrees.append(dTree)
     
@@ -170,7 +172,7 @@ def skeleton_to_tree(skeleton, img, somas):
     # Make sure soma centroids are marked   
     for soma in somas:
         skeleton[soma.centroid[0], soma.centroid[1]] = 255
-        
+
     coords = np.where((skeleton > 1)) 
     
     # Here we are adding a 3rd coordinate representing the color of the pixel,
@@ -213,6 +215,7 @@ def skeleton_to_tree(skeleton, img, somas):
         
         for c in soma.contour: 
             contour_index = np.where((X[:,0] == c[0]) & (X[:,1] == c[1]))[0]
+
             lil_G[centroid_index, contour_index] = 0.01
             lil_G[contour_index, centroid_index] = 0.01
     
@@ -227,7 +230,7 @@ def skeleton_to_tree(skeleton, img, somas):
     
     # Break connections between somas
     tree_csr = split_somas(tree_csr, centroid_indices)
-    
+
     tree_csr_img = Utils.plot_tree_csr(tree_csr, X, (1024,1024), False)
     
     directedTrees = create_directed_trees(tree_csr, X, centroid_indices)
@@ -284,10 +287,11 @@ def process_skeleton(skeleton_fname, img_fname, metadata_fname, soma_fname, micr
         somas = []
         for v in videoSomas:
             if frame in v.frames: somas.append(v.frameSomas[frame])
-            
+        
         (trees, tree_csr_img) = skeleton_to_tree(skel, img, somas)
         directedTrees[frame] = trees
         tree_csr_imgs[frame] = tree_csr_img
+
         frame += 1
         
     skel_tif.close()
@@ -317,28 +321,22 @@ def process_skeleton(skeleton_fname, img_fname, metadata_fname, soma_fname, micr
         
 
 if __name__=='__main__':
-    img_fname = "/mnt/storage/BaramLabFiles/7-20-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES/7-20-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Male 3 L PVN T1_b_4D_Male 3 L PVN T1.ims"
+    #img_fname = "/mnt/storage/BaramLabFiles/7-20-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES/7-20-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Male 3 L PVN T1_b_4D_Male 3 L PVN T1.ims"
+    img_fname = "/Users/jaclynbeck/Desktop/BaramLab/videos/A_LPVN_T1_08202017/8-20-17_crh-tdtomato+cx3cr1-gfp p8 pvn ces_male 1 l pvn t1_b_4d.ims"
 
-    path = os.path.dirname(img_fname)
-    path = os.path.join(path, "video_processing", 
-                        os.path.basename(img_fname)[0:-4])
+    f_path = os.path.dirname(img_fname)
+    f_path = os.path.join(f_path, "video_processing", os.path.basename(img_fname)[0:-4])
     
-    img_fname = os.path.join(path, 'preprocessed_max_projection_10iter.tif')
-    skeleton_fname = os.path.join(path, 'skeleton.tif')
-    metadata_fname = os.path.join(path, 'img_metadata.p')
-    soma_fname = os.path.join(path, 'somas.p')
-    microglia_fname = os.path.join(path, 'processed_microglia.p')
-    tree_fname = os.path.join(path, 'directedTrees_pruned.p')
+    img_fname = os.path.join(f_path, 'preprocessed_max_projection_10iter.tif')
+    skeleton_fname = os.path.join(f_path, 'skeleton.tif')
+    metadata_fname = os.path.join(f_path, 'img_metadata.p')
+    soma_fname = os.path.join(f_path, 'somas.p')
+    microglia_fname = os.path.join(f_path, 'processed_microglia.p')
+    tree_fname = os.path.join(f_path, 'directedTrees_unpruned.p')
     
     start_time = timeit.default_timer()
     
     process_skeleton(skeleton_fname, img_fname, metadata_fname, soma_fname, microglia_fname)
-
-    elapsed = timeit.default_timer() - start_time
-    print(elapsed)
-    
-    """
-    start_time = timeit.default_timer()
     
     with open(soma_fname, 'rb') as f:
         videoSomas = pickle.load(f)
@@ -346,12 +344,11 @@ if __name__=='__main__':
     with open(tree_fname, 'rb') as f:
         directedTrees = pickle.load(f)
         
-    microglia = match_trees(videoSomas, directedTrees)
+    #microglia = match_trees(videoSomas, directedTrees)
     
-    with open(microglia_fname, 'wb') as f:
-        pickle.dump(microglia, f)
+    #with open(microglia_fname, 'wb') as f:
+    #    pickle.dump(microglia, f)
     
     elapsed = timeit.default_timer() - start_time
     print(elapsed)
-    """
 

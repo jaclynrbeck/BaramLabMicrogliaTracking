@@ -9,9 +9,9 @@ Created on Mon Dec  4 13:14:38 2017
 import bioformats
 import datetime
 import scipy as sp
+import numpy as np
 import cv2
 import Utils
-import numpy as np
 
 
 """
@@ -409,7 +409,7 @@ class VideoSoma(object):
             # Do the two somas overlap? If so, add this frame to the overlap
             # frames list
             intersect = set.intersection(coords1, coords2)
-            if len(intersect) > 0:
+            if len(intersect) > 5:
                 overlap_frames.append(f)
     
         return overlap_frames
@@ -445,6 +445,19 @@ class VideoSoma(object):
                 # Merge the coordinates, ensuring there are no duplicates by
                 # making them a set before converting them to an array. 
                 new_coords = np.array(list(set.union(coords1, coords2)))
+                
+                bw = np.zeros((1024, 1024), dtype='uint8')
+                bw[new_coords[:,0], new_coords[:,1]] = 1
+        
+                number, labels, stats, centroids = cv2.connectedComponentsWithStats(bw, 
+                                                                connectivity=4)
+                
+                # If it found more than background + 1 object, just use the
+                # largest object
+                if number > 2:
+                    label = np.argmax(stats[1:,-1])+1
+                    new_coords = np.vstack(np.where(labels == label)).T
+        
                 new_soma = FrameSoma(f, new_coords)
     
                 # This new soma replaces the old one in the array. Delete
@@ -718,6 +731,23 @@ class DirectedTree(object):
                 
         else: # This would be the soma center
             return None
+        
+    """
+    Creates a sparse matrix representation of the graph. Connections between
+    nodes are weightd by the distance between the nodes.
+    """
+    def sparseRepresentation(self):
+        sr = sp.sparse.lil_matrix((len(self.nodes), len(self.nodes)))
+        
+        for i in range(len(self.nodes)):
+            node = self.nodes[i]
+            for C in node.children:
+                sr[i, self.nodes.find(C)] = C.length-node.length
+        
+        coords = np.vstack([N.coordinates for N in self.nodes])
+        
+        return (sr, coords)
+                
         
         
     """
