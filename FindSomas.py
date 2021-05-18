@@ -9,7 +9,7 @@ Created on Mon Oct  2 13:12:56 2017
 @author: jaclynbeck
 """
 
-import scipy as sp
+import numpy as np
 import cv2
 from Objects import FrameSoma, VideoSoma, BoundingBox
 
@@ -29,7 +29,7 @@ def label_objects(bw, frame):
     number, labels, stats, centroids = cv2.connectedComponentsWithStats(bw, 
                                                                 connectivity=4)
     
-    valid = sp.where(stats[:,4] >= FrameSoma.MIN_SOMA_SIZE)[0]
+    valid = np.where(stats[:,4] >= FrameSoma.MIN_SOMA_SIZE)[0]
     
     somas = []
     
@@ -38,7 +38,7 @@ def label_objects(bw, frame):
         if v == 0: # Ignore the 'background' label, which will always be 0
             continue
 
-        coords = sp.vstack(sp.where(labels == v)).T
+        coords = np.vstack(np.where(labels == v)).T
         bbox = (min(coords[:,0]), min(coords[:,1]), \
                 max(coords[:,0]), max(coords[:,1]))
         
@@ -68,9 +68,9 @@ Output:
 def find_somas_single_image(img, frame, threshold_percentile):
     diff = 100-threshold_percentile
     threshold_percentile = 100-diff/2
-    threshold = sp.percentile(img, threshold_percentile)
+    threshold = np.percentile(img, threshold_percentile)
     
-    bw = sp.zeros_like(img, dtype='uint8')  
+    bw = np.zeros_like(img, dtype='uint8')  
     bw[img > threshold] = 255
     
     k1 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(10,10))
@@ -153,17 +153,30 @@ def interpolate_somas(videoSomas, threshold_images):
         toAdd = []
         for frame in range(len(threshold_images)):
             # If this frame is missing, interpolate the soma
-            if frame not in v.frames:
+            if frame not in v.frames:               
                 frameSoma = v.nearestFrame(frame)
                 bw = threshold_images[frame]
                 
                 # Find all coordinates of the soma body in the nearest frame
                 # that are also white in this frame's thresholded image
-                ind = sp.where(bw[frameSoma.rows(), frameSoma.cols()] > 0)[0]
-                coords = sp.vstack((frameSoma.rows()[ind], 
+                ind = np.where(bw[frameSoma.rows(), frameSoma.cols()] > 0)[0]
+                coords = np.vstack((frameSoma.rows()[ind], 
                                     frameSoma.cols()[ind])).T
                 
-                if len(coords) > 10: # Filter out noise
+                # Code written but not thoroughly tested. Saving for later.
+                #bw = np.zeros((1024,1024), dtype='uint8')
+                #bw[coords[:,0], coords[:,1]] = 1
+        
+                #number, labels, stats, centroids = cv2.connectedComponentsWithStats(bw, 
+                #                                                connectivity=4)
+                
+                # If it found more than background + 1 object, just use the
+                # largest object
+                #if number > 2:
+                #    label = np.argmax(stats[1:,-1])+1
+                #    coords = np.vstack(np.where(labels == label)).T
+                
+                if len(coords) > 100: # Filter out noise
                     newSoma = FrameSoma(frame, coords)
                     toAdd.append(newSoma)
         
@@ -176,7 +189,7 @@ def interpolate_somas(videoSomas, threshold_images):
     toRemove = []
     for i in range(len(videoSomas)):
         v1 = videoSomas[i]
-        for j in sp.arange(i+1, len(videoSomas)):
+        for j in np.arange(i+1, len(videoSomas)):
             v2 = videoSomas[j]
             
             # Find all frames where these two VideoSomas overlap spatially
