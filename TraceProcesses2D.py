@@ -9,7 +9,7 @@ Created on Thu Oct 5 20:54:49 2017
 @author: jaclynbeck
 """
 
-import scipy as sp
+import numpy as np
 import timeit
 import skimage.morphology as skm
 from libtiff import TIFF
@@ -45,8 +45,8 @@ Output:
 """
 def trace_image(img, threshold):
     # Threshold the image
-    thresh = sp.percentile(img, threshold)
-    bw = sp.zeros_like(img, dtype='uint8')
+    thresh = np.percentile(img, threshold)
+    bw = np.zeros_like(img, dtype='uint8')
     bw[img > thresh] = 1
 
     # Get a list of all connected regions in the thresholded image
@@ -55,13 +55,13 @@ def trace_image(img, threshold):
     
     # Here we process whichever list is shorter to help with code speed: 
     # valid regions or invalid (too small) regions
-    invalid = sp.where(stats[:,4] < 20)[0]
-    valid   = sp.where(stats[:,4] >= 20)[0]
+    invalid = np.where(stats[:,4] < 20)[0]
+    valid   = np.where(stats[:,4] >= 20)[0]
     
     # Processing the valid list: make a black image and only mark valid regions
     # as white
     if len(valid) < len(invalid):
-        bw = sp.zeros_like(img, dtype='uint8')
+        bw = np.zeros_like(img, dtype='uint8')
         
         for v in valid[1:]: # Skip valid[0], which is background
             bw[labels == v] = 1
@@ -85,11 +85,11 @@ def trace_image(img, threshold):
     # Instead we take the top 20% of pixel values and make them the 20% 
     # threshold value, so that the total range of pixel values is a little 
     # smaller and we can distinguish between lower-valued pixels better. 
-    thresh = sp.percentile(skeleton[skeleton > 0], 80)
+    thresh = np.percentile(skeleton[skeleton > 0], 80)
     skeleton[skeleton > thresh] = thresh
     
     # Convert to a uint8, setting the max value of skeleton pixels as 250.
-    skeleton = sp.ceil((skeleton * (250.0/skeleton.max()))).astype('uint8')
+    skeleton = np.ceil((skeleton * (250.0/skeleton.max()))).astype('uint8')
 
     return skeleton, bw
 
@@ -184,8 +184,8 @@ instead for a little more error checking of file names/paths.
 """
 if __name__ == '__main__':
     img_fname  = '/Users/jaclynbeck/Desktop/BaramLab/videos/A_LPVN_T1_08202017/video_processing/8-20-17_crh-tdtomato+cx3cr1-gfp p8 pvn ces_male 1 l pvn t1_b_4d/preprocessed_max_projection_10iter.tif' 
-    output_fname = 'skeleton.tif'
     soma_fname = 'somas.p'
+    output_fname = 'skeleton.tif'
 
     start_time = timeit.default_timer()
     
