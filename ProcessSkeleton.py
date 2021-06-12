@@ -44,6 +44,7 @@ def split_somas(tree_csr, soma_indices):
     
     # Using a linked-list format sparse matrix is faster for this task
     lil_tree = tree_csr.tolil()
+    to_ignore = []
     
     # For each soma, check if there's a path between it and another soma
     for i in range(len(soma_indices)-1):
@@ -76,11 +77,16 @@ def split_somas(tree_csr, soma_indices):
                     if break_pt < len(arr)-1:
                         lil_tree[arr[break_pt,1], arr[break_pt+1,1]] = 0
                         lil_tree[arr[break_pt+1,1], arr[break_pt,1]] = 0
+                    
+                    # If these somas are connected too closely, ignore any 
+                    # process tips that happen along this line
+                    if arr[break_pt,0] < 5:
+                        to_ignore.extend(arr[:,1].astype('int'))
     
     tree_csr = lil_tree.tocsr()
     tree_csr.eliminate_zeros()
     
-    return tree_csr
+    return tree_csr, to_ignore
     
     
 """
@@ -183,7 +189,6 @@ def skeleton_to_tree(skeleton, img, somas):
     # the high colors look closer. 
     values = skeleton[coords[0], coords[1]]-skeleton[skeleton > 1].min()
     values = 1 - values / values.max()
-    #X = np.vstack((coords[0], coords[1], values)).T
     X = np.vstack(coords).T
     
     # Get a list of IDs that correspond to the soma centroids, for referencing
@@ -200,7 +205,16 @@ def skeleton_to_tree(skeleton, img, somas):
                          metric='euclidean',
                          metric_params=None)
     
-    # Add the pixel values as an extra weight to the distance
+    # Before altering the graph, use it to find cycles among skeleton pixels
+    cycle_ids = Utils.find_cycles(G, X)
+    
+    cycles = []
+    for CI in cycle_ids:
+        cycles.extend(CI[0])
+        
+    cycles = list(set(cycles))
+    
+    # Add the pixel values as an extra weight to the distance.
     dists = np.vstack(sparse.find(G))
     pairs = np.max(values[dists[0:2].astype('int')], axis=0)
     dists[2] = dists[2] + pairs
@@ -229,15 +243,17 @@ def skeleton_to_tree(skeleton, img, somas):
     tree_csr.eliminate_zeros()
     
     # Break connections between somas
-    tree_csr = split_somas(tree_csr, centroid_indices)
+    tree_csr, to_ignore = split_somas(tree_csr, centroid_indices)
+    cycles.extend(to_ignore)
+    cycles = list(set(cycles))
 
     tree_csr_img = Utils.plot_tree_csr(tree_csr, X, (1024,1024), False)
     
     directedTrees = create_directed_trees(tree_csr, X, centroid_indices)
-    return directedTrees, tree_csr_img
+    return directedTrees, tree_csr_img, cycles
 
 
-def match_trees(videoSomas, trees):
+def match_trees(videoSomas, trees, cycle_ids):
     videoMicroglia = []
     
     for v in videoSomas:
@@ -255,7 +271,7 @@ def match_trees(videoSomas, trees):
             if match is not None:
                 microglia.addTreeAtFrame(match, f)
         
-        microglia.matchLeaves()        
+        microglia.matchLeaves(cycle_ids)        
         videoMicroglia.append(microglia)
         
     return videoMicroglia
@@ -282,15 +298,17 @@ def process_skeleton(skeleton_fname, img_fname, metadata_fname, soma_fname, micr
     frame = 0
     directedTrees = {}
     tree_csr_imgs = {}
+    cycle_ids = {}
     
     for skel, img in zip(skel_tif.iter_images(), img_tif.iter_images()): 
         somas = []
         for v in videoSomas:
             if frame in v.frames: somas.append(v.frameSomas[frame])
         
-        (trees, tree_csr_img) = skeleton_to_tree(skel, img, somas)
+        (trees, tree_csr_img, cycles) = skeleton_to_tree(skel, img, somas)
         directedTrees[frame] = trees
         tree_csr_imgs[frame] = tree_csr_img
+        cycle_ids[frame] = cycles
 
         frame += 1
         
@@ -301,19 +319,17 @@ def process_skeleton(skeleton_fname, img_fname, metadata_fname, soma_fname, micr
     out_tif = TIFF.open(output_fname, mode='w')
     for img in tree_csr_imgs.values():
         out_tif.write_image(img.astype('<u2'))
-    
-    #with open(os.path.join(path, 'directedTrees_unpruned.p'), 'wb') as f:
-    #    pickle.dump(directedTrees, f)
-    
+        
+    output_fname = os.path.join(path, "cycle_ids.p")
+    with open(output_fname, 'wb') as f:
+        pickle.dump(cycle_ids, f)
+
     # Prune short branches
     for frame in directedTrees:
         for dT in directedTrees[frame]:
             dT.prune()
-    
-    #with open(os.path.join(path, 'directedTrees_pruned.p'), 'wb') as f:
-    #    pickle.dump(directedTrees, f)
-        
-    microglia = match_trees(videoSomas, directedTrees)
+
+    microglia = match_trees(videoSomas, directedTrees, cycle_ids)
         
     with open(microglia_fname, 'wb') as f:
         pickle.dump(microglia, f)
@@ -321,8 +337,7 @@ def process_skeleton(skeleton_fname, img_fname, metadata_fname, soma_fname, micr
         
 
 if __name__=='__main__':
-    #img_fname = "/mnt/storage/BaramLabFiles/7-20-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES/7-20-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Male 3 L PVN T1_b_4D_Male 3 L PVN T1.ims"
-    img_fname = "/Users/jaclynbeck/Desktop/BaramLab/videos/A_LPVN_T1_08202017/8-20-17_crh-tdtomato+cx3cr1-gfp p8 pvn ces_male 1 l pvn t1_b_4d.ims"
+    img_fname = "/mnt/storage/BaramLabFiles/7-20-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES/7-20-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Male 3 L PVN T1_b_4D_Male 3 L PVN T1.ims"
 
     f_path = os.path.dirname(img_fname)
     f_path = os.path.join(f_path, "video_processing", os.path.basename(img_fname)[0:-4])
@@ -333,6 +348,7 @@ if __name__=='__main__':
     soma_fname = os.path.join(f_path, 'somas.p')
     microglia_fname = os.path.join(f_path, 'processed_microglia.p')
     tree_fname = os.path.join(f_path, 'directedTrees_unpruned.p')
+    cycles_fname = os.path.join(f_path, 'cycle_ids.p')
     
     start_time = timeit.default_timer()
     
@@ -344,7 +360,10 @@ if __name__=='__main__':
     with open(tree_fname, 'rb') as f:
         directedTrees = pickle.load(f)
         
-    #microglia = match_trees(videoSomas, directedTrees)
+    with open(cycles_fname, 'rb') as f:
+        cycle_ids = pickle.load(f)
+        
+    #microglia = match_trees(videoSomas, directedTrees, cycle_ids)
     
     #with open(microglia_fname, 'wb') as f:
     #    pickle.dump(microglia, f)

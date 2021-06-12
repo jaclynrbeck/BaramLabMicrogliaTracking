@@ -58,6 +58,7 @@ def trace_image(img, threshold):
     invalid = np.where(stats[:,4] < 20)[0]
     valid   = np.where(stats[:,4] >= 20)[0]
     
+    # Use whichever list will be faster to process here:
     # Processing the valid list: make a black image and only mark valid regions
     # as white
     if len(valid) < len(invalid):
@@ -183,7 +184,12 @@ Preferably the skeletonize function should be used with "AnalyzeAllVideos"
 instead for a little more error checking of file names/paths. 
 """
 if __name__ == '__main__':
-    img_fname  = '/Users/jaclynbeck/Desktop/BaramLab/videos/A_LPVN_T1_08202017/video_processing/8-20-17_crh-tdtomato+cx3cr1-gfp p8 pvn ces_male 1 l pvn t1_b_4d/preprocessed_max_projection_10iter.tif' 
+    img_fname = "/mnt/storage/BaramLabFiles/7-20-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES/7-20-17_CRH-tdTomato+CX3CR1-GFP P8 PVN CES_Male 3 L PVN T1_b_4D_Male 3 L PVN T1.ims"
+    f_path = os.path.dirname(img_fname)
+    f_path = os.path.join(f_path, "video_processing", os.path.basename(img_fname)[0:-4])
+    
+    img_fname = os.path.join(f_path, 'preprocessed_max_projection_10iter.tif')
+    
     soma_fname = 'somas.p'
     output_fname = 'skeleton.tif'
 

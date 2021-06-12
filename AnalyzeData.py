@@ -36,7 +36,7 @@ def write_csv(data, numFrames, out_file):
     
     if data is not None:
         for d in data:
-            lines += ",".join([str(n) for n in d]).replace("None","").replace("nan","0") + "\n"
+            lines += ",".join([str(n) for n in d]).replace("None","").replace("nan","") + "\n"
     
         csv = open(out_file, 'w')
         csv.writelines(lines)
@@ -117,10 +117,8 @@ def postprocess_data(microglia_fname, included_microglia):
     files = os.listdir(raw_path)
     
     for file in files:
-        if file[0] != '.' and file[0] != '~' and file[-3:] == 'csv': #\
-            #and "identity" not in file.lower():
+        if file[0] != '.' and file[0] != '~' and file[-3:] == 'csv':
             with open(os.path.join(raw_path, file), 'r') as readfile:
-                #line = readfile.readline().replace('\n','')
                 data = [line.split(',') for line in readfile.readlines()]
                 row1 = [float(x) for x in data[0] if x != '\n']
                 

@@ -122,7 +122,7 @@ def deconvolve_images_2D(img_fname, output_fname, psf_fname, metadata_fname,
     
     window = []
     img0 = None
-    
+
     numImages = meta.numImages
     
     # Read each image, deconvolve it, and register it with the previous image
@@ -174,8 +174,9 @@ def deconvolve_images_2D(img_fname, output_fname, psf_fname, metadata_fname,
             # does nothing.)
             averaged = sum(window) / window_size
             
-            # Re-adjust the range of the pixels to the range of a uint16
-            averaged = averaged * (65535.0 / averaged.max())
+            # Re-adjust the range of the pixels to the range of a uint16 and
+            # center the median at the same place in each frame
+            averaged = np.minimum(averaged * (400.0 / np.median(averaged)), 65535.0)
             
             # Write this as a little endian uint16 image
             averaged_tif.write_image(averaged.astype('<u2')) 
@@ -193,7 +194,7 @@ def deconvolve_images_2D(img_fname, output_fname, psf_fname, metadata_fname,
     # Technically this should be uncommented but it interferes with the ability
     # to run multiple calls of this deconvolve function in a row so it is
     # commented out. 
-    javabridge.kill_vm() 
+    #javabridge.kill_vm() 
 
 
 """

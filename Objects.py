@@ -211,9 +211,10 @@ class FrameSoma(object):
         bw = np.zeros((self.bbox.height(), self.bbox.width()), dtype='uint8')
         bw[self.rows()-self.bbox.row_min, self.cols()-self.bbox.col_min] = 1
         
+        # Previous versions of opencv returned 3 arrays, but now it returns 2
         contours = cv2.findContours(bw, cv2.RETR_EXTERNAL, 
                                     cv2.CHAIN_APPROX_NONE)
-        contours = [c for c in contours[1] if c.shape[0] > 1]
+        contours = [c for c in contours[0] if c.shape[0] > 1]
     
         # contours is a list of M contours, where each element is an Nx2 array 
         # of coordinates belonging to each contour. This code flattens the 
@@ -1093,7 +1094,7 @@ class Microglia(object):
     
     Leaves that are actually on the soma contour are removed first.
     """
-    def matchLeaves(self):
+    def matchLeaves(self, cycle_ids):
         self.removeSomaLeaves()
         
         frames = sorted(list(self.trees.keys()))
@@ -1119,11 +1120,55 @@ class Microglia(object):
             # Match leaves in frame-1 and frame
             matches = Utils.find_matches(coords1, coords2)
             
-            # Any matches that are > 20 pixels apart are probably not really
+            # Any matches that are > 50 pixels apart are probably not really
             # matches. Discard those and keep the rest. 
             for m in matches:
                 dist = m[2]
-                if dist <= 20: 
+                L1 = leaves1[m[0]]
+                L2 = leaves2[m[1]]
+                
+                if L1.value in cycle_ids[f1] or L2.value in cycle_ids[f2]:
+                    continue
+                
+                coords = []
+                done = False
+                
+                node = L1
+                while not done:
+                    coords.append(node.coordinates)
+                    if node.parent is None or node.parent.parent is None:
+                        done = True
+                        break
+                    
+                    if len(node.children) > 1:
+                        done = True
+                        break
+                    
+                    node = node.parent
+                    
+                coords_L1 = np.vstack(coords)
+                
+                coords = []
+                done = False
+                
+                node = L2
+                while not done:
+                    coords.append(node.coordinates)
+                    if node.parent is None or node.parent.parent is None:
+                        done = True
+                        break
+                    
+                    if len(node.children) > 1:
+                        done = True
+                        break
+                    
+                    node = node.parent
+                
+                coords_L2 = np.vstack(coords)
+                
+                cdist = sp.spatial.distance.cdist(coords_L1, coords_L2, "euclidean") # Try 3 px apart
+
+                if np.min(cdist) < 5 and (dist < 50):
                     leaf1 = (f1, leaves1[m[0]])
                     leaf2 = (f2, leaves2[m[1]])
                 
@@ -1335,7 +1380,7 @@ class Microglia(object):
         
         for p in self.processTips:
             valid = [v for v in p.velocityX if v is not None]
-            if len(valid) < 1: # Exclude tips that aren't in 3 or more frames
+            if len(valid) < 5: # Exclude tips that aren't in 5 or more frames
                 continue
             
             tID = [mID, self.processTips.index(p)]

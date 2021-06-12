@@ -42,11 +42,6 @@ def preprocess_img(img):
     img = equalize_img(img)
     img = denoise_img(img).astype('uint8')
     
-    #bw = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-    #                           cv2.THRESH_BINARY, 65, 0)
-    
-    #img[bw==0] = 0
-    
     return img
     
 
@@ -122,6 +117,72 @@ def nearest_neighbor(point, other_points):
     closest_index = sp.argmin(dist)
     
     return (other_points[closest_index], dist[closest_index], closest_index)
+
+def depth_search(graph, index, parent, visited):
+    visited[index] = max(visited[index], 1)
+
+    dists = np.vstack(sparse.find(graph[index]))
+    inds = np.where(dists[2] < 2)[0]
+    children = dists[1, inds].astype('int')
+    
+    cycle = []
+    
+    # No children = no cycle
+    if len(children) == 0:
+        return []
+    
+    for child in children:
+        # Don't traverse backward
+        if child == parent:
+            continue
+        
+        # We already found a cycle containing the child node
+        if visited[child] == 2:
+            found = [Cyc for Cyc in cycle if index in Cyc[0] and child in Cyc[0]]
+            
+            # Already explored this path
+            if len(found) > 0:
+                continue
+            
+            # Else fall through to next condition
+        
+        # There is a cycle including this node
+        if visited[child] > 0:
+            cycle.append(([child, index], True))
+            visited[child] = 2
+            visited[index] = 2
+            
+        else:
+            child_cycle = depth_search(graph, child, index, visited)
+            
+            for CC in range(len(child_cycle)):
+                entry = child_cycle[CC]
+                if entry[1] == True:
+                    if index in entry[0]:
+                        entry = (entry[0], False)
+                        child_cycle[CC] = entry
+                    else:
+                        entry[0].append(index)
+                    visited[index] = 2
+                
+            cycle.extend(child_cycle)
+    
+    return cycle
+    
+    
+def find_cycles(graph, coordinates):
+    visited = [0] * len(coordinates)
+    cycles = []
+    
+    for C in range(len(coordinates)):
+        if visited[C] > 0:
+            continue
+        
+        cycle = depth_search(graph, C, None, visited)
+        cycles.extend(cycle)
+        
+    return cycles
+        
 
     
 def plot_levels(levels, img_size, display=False):
